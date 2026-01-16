@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Prospects from "./pages/Prospects";
 import ProspectsHistory from "./pages/ProspectsHistory";
 import Clients from "./pages/Clients";
+import ClientDetail from "./pages/ClientDetail";
 import ClientsHistory from "./pages/ClientsHistory";
 import ClientDebt from "./pages/ClientDebt";
 import Payments from "./pages/Payments";
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/prospects" element={<ProtectedRoute><Prospects /></ProtectedRoute>} />
               <Route path="/prospects/history" element={<ProtectedRoute><ProspectsHistory /></ProtectedRoute>} />
               <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+              <Route path="/clients/:clientId" element={<ProtectedRoute><ClientDetail /></ProtectedRoute>} />
               <Route path="/clients/history" element={<ProtectedRoute><ClientsHistory /></ProtectedRoute>} />
               <Route path="/clients/debt" element={<ProtectedRoute><ClientDebt /></ProtectedRoute>} />
               <Route path="/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
