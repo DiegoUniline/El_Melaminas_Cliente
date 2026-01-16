@@ -84,6 +84,29 @@ export function FinalizeProspectDialog({
         if (equipmentError) {
           console.error('Error creating equipment:', equipmentError);
         }
+
+        // 4. Create billing record with default values
+        const today = new Date();
+        const defaultBillingDay = 10;
+        const firstBillingDate = new Date(today.getFullYear(), today.getMonth() + 1, defaultBillingDay);
+        
+        const { error: billingError } = await supabase
+          .from('client_billing')
+          .insert({
+            client_id: clientData.id,
+            monthly_fee: 0, // Will be set when editing client
+            installation_cost: 0,
+            installation_date: today.toISOString().split('T')[0],
+            first_billing_date: firstBillingDate.toISOString().split('T')[0],
+            billing_day: defaultBillingDay,
+            prorated_amount: 0,
+            additional_charges: 0,
+            balance: 0,
+          });
+
+        if (billingError) {
+          console.error('Error creating billing:', billingError);
+        }
       }
 
       toast.success('Prospecto finalizado y cliente creado correctamente');
