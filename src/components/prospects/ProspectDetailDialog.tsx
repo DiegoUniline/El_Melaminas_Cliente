@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,7 +7,18 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { History, ArrowRight } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { formatPhoneDisplay } from '@/lib/phoneUtils';
 import type { Prospect } from '@/types/database';
+
+interface ChangeHistoryItem {
+  id: string;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_at: string;
+}
 
 interface ProspectDetailDialogProps {
   open: boolean;
@@ -19,6 +31,38 @@ export function ProspectDetailDialog({
   onOpenChange,
   prospect,
 }: ProspectDetailDialogProps) {
+  const [changeHistory, setChangeHistory] = useState<ChangeHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    const fetchChangeHistory = async () => {
+      if (!prospect || prospect.status !== 'finalized') {
+        setChangeHistory([]);
+        return;
+      }
+
+      setLoadingHistory(true);
+      try {
+        const { data, error } = await supabase
+          .from('prospect_change_history')
+          .select('id, field_name, old_value, new_value, changed_at')
+          .eq('prospect_id', prospect.id)
+          .order('changed_at', { ascending: false });
+
+        if (error) throw error;
+        setChangeHistory(data || []);
+      } catch (error) {
+        console.error('Error fetching change history:', error);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    if (open && prospect) {
+      fetchChangeHistory();
+    }
+  }, [open, prospect]);
+
   if (!prospect) return null;
 
   const getStatusBadge = () => {
@@ -68,18 +112,24 @@ export function ProspectDetailDialog({
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Teléfono 1</p>
-                <p className="font-medium">{prospect.phone1}</p>
+                <p className="font-medium">
+                  {formatPhoneDisplay(prospect.phone1, (prospect as any).phone1_country)}
+                </p>
               </div>
               {prospect.phone2 && (
                 <div>
                   <p className="text-sm text-muted-foreground">Teléfono 2</p>
-                  <p className="font-medium">{prospect.phone2}</p>
+                  <p className="font-medium">
+                    {formatPhoneDisplay(prospect.phone2, (prospect as any).phone2_country)}
+                  </p>
                 </div>
               )}
               {prospect.phone3_signer && (
                 <div>
                   <p className="text-sm text-muted-foreground">Tel. Firmante</p>
-                  <p className="font-medium">{prospect.phone3_signer}</p>
+                  <p className="font-medium">
+                    {formatPhoneDisplay(prospect.phone3_signer, (prospect as any).phone3_country)}
+                  </p>
                 </div>
               )}
             </div>
@@ -156,6 +206,53 @@ export function ProspectDetailDialog({
                   Notas
                 </h3>
                 <p className="text-sm bg-muted p-3 rounded-lg">{prospect.notes}</p>
+              </div>
+            </>
+          )}
+
+          {/* Historial de cambios */}
+          {prospect.status === 'finalized' && (
+            <>
+              <Separator />
+              <div>
+                <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <History className="h-4 w-4" />
+                  Historial de Cambios
+                </h3>
+                {loadingHistory ? (
+                  <p className="text-sm text-muted-foreground">Cargando historial...</p>
+                ) : changeHistory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                    No se realizaron cambios al finalizar este prospecto.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {changeHistory.map((change) => (
+                      <div
+                        key={change.id}
+                        className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 rounded-lg"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm text-amber-800 dark:text-amber-200">
+                            {change.field_name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(change.changed_at).toLocaleString('es-MX')}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-red-600 dark:text-red-400 line-through">
+                            {change.old_value || '(vacío)'}
+                          </span>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-green-600 dark:text-green-400 font-medium">
+                            {change.new_value || '(vacío)'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
