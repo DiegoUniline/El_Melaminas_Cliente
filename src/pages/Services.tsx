@@ -535,14 +535,14 @@ export default function Services() {
               <div className="space-y-2">
                 <Label>Cliente</Label>
                 <Select 
-                  value={formData.client_id} 
-                  onValueChange={(v) => setFormData({ ...formData, client_id: v, prospect_id: '' })}
+                  value={formData.client_id || 'none'} 
+                  onValueChange={(v) => setFormData({ ...formData, client_id: v === 'none' ? '' : v, prospect_id: '' })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar cliente" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Ninguno</SelectItem>
+                    <SelectItem value="none">Ninguno</SelectItem>
                     {clients.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.first_name} {c.last_name_paterno}
@@ -554,14 +554,14 @@ export default function Services() {
               <div className="space-y-2">
                 <Label>Prospecto</Label>
                 <Select 
-                  value={formData.prospect_id} 
-                  onValueChange={(v) => setFormData({ ...formData, prospect_id: v, client_id: '' })}
+                  value={formData.prospect_id || 'none'} 
+                  onValueChange={(v) => setFormData({ ...formData, prospect_id: v === 'none' ? '' : v, client_id: '' })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar prospecto" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Ninguno</SelectItem>
+                    <SelectItem value="none">Ninguno</SelectItem>
                     {prospects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         {p.first_name} {p.last_name_paterno}
