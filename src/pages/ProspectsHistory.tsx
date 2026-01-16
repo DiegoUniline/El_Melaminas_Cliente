@@ -8,9 +8,20 @@ import { DataTable } from '@/components/shared/DataTable';
 import { supabase } from '@/integrations/supabase/client';
 import { exportToCSV } from '@/lib/exportToExcel';
 import { translateStatus, formatPhoneDisplay, getCountryInfo } from '@/lib/phoneUtils';
-import { Download, Eye } from 'lucide-react';
+import { Download, Eye, Edit, Trash2, RotateCcw, UserPlus, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProspectDetailDialog } from '@/components/prospects/ProspectDetailDialog';
+import { EditProspectDialog } from '@/components/prospects/EditProspectDialog';
+import { DeleteProspectDialog } from '@/components/prospects/DeleteProspectDialog';
+import { ReactivateProspectDialog } from '@/components/prospects/ReactivateProspectDialog';
+import { FinalizeProspectDialog } from '@/components/prospects/FinalizeProspectDialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { Prospect } from '@/types/database';
 
 export default function ProspectsHistory() {
@@ -18,6 +29,10 @@ export default function ProspectsHistory() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showReactivateDialog, setShowReactivateDialog] = useState(false);
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
 
   const fetchProspects = async () => {
@@ -90,6 +105,26 @@ export default function ProspectsHistory() {
     setShowDetailDialog(true);
   };
 
+  const handleEdit = (prospect: Prospect) => {
+    setSelectedProspect(prospect);
+    setShowEditDialog(true);
+  };
+
+  const handleDelete = (prospect: Prospect) => {
+    setSelectedProspect(prospect);
+    setShowDeleteDialog(true);
+  };
+
+  const handleReactivate = (prospect: Prospect) => {
+    setSelectedProspect(prospect);
+    setShowReactivateDialog(true);
+  };
+
+  const handleFinalize = (prospect: Prospect) => {
+    setSelectedProspect(prospect);
+    setShowFinalizeDialog(true);
+  };
+
   const columns = [
     {
       key: 'name',
@@ -137,16 +172,48 @@ export default function ProspectsHistory() {
       key: 'actions',
       header: 'Acciones',
       render: (p: Prospect) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleView(p);
-          }}
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem onClick={() => handleView(p)}>
+              <Eye className="mr-2 h-4 w-4" />
+              Ver detalles
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleEdit(p)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {p.status === 'cancelled' && (
+              <>
+                <DropdownMenuItem onClick={() => handleReactivate(p)}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Reactivar
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleFinalize(p)}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Convertir a Cliente
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem 
+              onClick={() => handleDelete(p)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];
@@ -185,6 +252,34 @@ export default function ProspectsHistory() {
         open={showDetailDialog}
         onOpenChange={setShowDetailDialog}
         prospect={selectedProspect}
+      />
+
+      <EditProspectDialog
+        open={showEditDialog}
+        onOpenChange={setShowEditDialog}
+        prospect={selectedProspect}
+        onSuccess={fetchProspects}
+      />
+
+      <DeleteProspectDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        prospect={selectedProspect}
+        onSuccess={fetchProspects}
+      />
+
+      <ReactivateProspectDialog
+        open={showReactivateDialog}
+        onOpenChange={setShowReactivateDialog}
+        prospect={selectedProspect}
+        onSuccess={fetchProspects}
+      />
+
+      <FinalizeProspectDialog
+        open={showFinalizeDialog}
+        onOpenChange={setShowFinalizeDialog}
+        prospect={selectedProspect}
+        onSuccess={fetchProspects}
       />
     </AppLayout>
   );
