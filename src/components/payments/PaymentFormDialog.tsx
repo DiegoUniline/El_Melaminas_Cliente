@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -30,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { ComboboxWithCreate, CatalogItem } from '@/components/shared/ComboboxWithCreate';
 import type { Client, ClientBilling } from '@/types/database';
 
 type ClientWithBilling = Client & {
@@ -58,8 +60,6 @@ interface PaymentFormDialogProps {
   onSuccess: () => void;
 }
 
-const PAYMENT_TYPES = ['Efectivo', 'Transferencia', 'Depósito', 'Tarjeta'];
-const BANK_TYPES = ['BBVA', 'Banorte', 'Santander', 'Banamex', 'HSBC', 'Scotiabank', 'Otro'];
 const MONTHS = [
   { value: 1, label: 'Enero' },
   { value: 2, label: 'Febrero' },
@@ -77,17 +77,46 @@ const MONTHS = [
 
 export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: PaymentFormDialogProps) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentDate = new Date();
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
 
+  // Fetch payment methods from catalog
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment_methods_active'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data.map(pm => ({ id: pm.id, name: pm.name })) as CatalogItem[];
+    },
+  });
+
+  // Fetch banks from catalog
+  const { data: banks = [] } = useQuery({
+    queryKey: ['banks_active'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('banks')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data.map(b => ({ id: b.id, name: b.name })) as CatalogItem[];
+    },
+  });
+
   const form = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
       amount: client?.client_billing?.monthly_fee || 0,
-      payment_type: 'Efectivo',
+      payment_type: '',
       bank_type: '',
       payment_date: currentDate.toISOString().split('T')[0],
       period_month: currentMonth,
@@ -99,7 +128,19 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
     },
   });
 
-  const paymentType = form.watch('payment_type');
+  const paymentTypeId = form.watch('payment_type');
+  const selectedPaymentMethod = paymentMethods.find(pm => pm.id === paymentTypeId);
+  const needsBank = selectedPaymentMethod?.name === 'Transferencia' || selectedPaymentMethod?.name === 'Depósito';
+
+  const handlePaymentMethodCreated = (item: CatalogItem) => {
+    queryClient.invalidateQueries({ queryKey: ['payment_methods_active'] });
+    queryClient.invalidateQueries({ queryKey: ['payment_methods_all'] });
+  };
+
+  const handleBankCreated = (item: CatalogItem) => {
+    queryClient.invalidateQueries({ queryKey: ['banks_active'] });
+    queryClient.invalidateQueries({ queryKey: ['banks_all'] });
+  };
 
   const onSubmit = async (data: PaymentFormData) => {
     if (!client) return;
@@ -244,46 +285,42 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tipo de Pago *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecciona tipo" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {PAYMENT_TYPES.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <ComboboxWithCreate
+                        value={field.value}
+                        onChange={(value) => field.onChange(value)}
+                        items={paymentMethods}
+                        placeholder="Selecciona tipo"
+                        searchPlaceholder="Buscar método..."
+                        emptyMessage="No hay métodos de pago"
+                        tableName="payment_methods"
+                        onItemCreated={handlePaymentMethodCreated}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {(paymentType === 'Transferencia' || paymentType === 'Depósito') && (
+              {needsBank && (
                 <FormField
                   control={form.control}
                   name="bank_type"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Banco</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecciona banco" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {BANK_TYPES.map((bank) => (
-                            <SelectItem key={bank} value={bank}>
-                              {bank}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <ComboboxWithCreate
+                          value={field.value || ''}
+                          onChange={(value) => field.onChange(value)}
+                          items={banks}
+                          placeholder="Selecciona banco"
+                          searchPlaceholder="Buscar banco..."
+                          emptyMessage="No hay bancos"
+                          tableName="banks"
+                          onItemCreated={handleBankCreated}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

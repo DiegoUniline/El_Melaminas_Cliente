@@ -26,6 +26,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Plus, Edit, Power, PowerOff, DollarSign, Wifi, 
   Loader2, Tag, Settings, CreditCard, Building, Users
@@ -110,6 +117,11 @@ export default function Catalogs() {
   const [bankForm, setBankForm] = useState({ name: '', short_name: '' });
   const [isSubmittingBank, setIsSubmittingBank] = useState(false);
   const [toggleBankDialog, setToggleBankDialog] = useState<Bank | null>(null);
+
+  // ========== USER STATE ==========
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [userForm, setUserForm] = useState({ full_name: '', email: '', password: '', role: 'employee' });
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   // ========== FETCH DATA ==========
   const { data: charges = [], isLoading: loadingCharges } = useQuery({
@@ -409,6 +421,60 @@ export default function Catalogs() {
     }
   };
 
+  // ========== CREATE USER HANDLER ==========
+  const handleNewUser = () => {
+    setUserForm({ full_name: '', email: '', password: '', role: 'employee' });
+    setUserDialogOpen(true);
+  };
+
+  const handleCreateUser = async () => {
+    if (!userForm.full_name || !userForm.email || !userForm.password) {
+      toast.error('Completa todos los campos requeridos');
+      return;
+    }
+    
+    if (userForm.password.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setIsSubmittingUser(true);
+    try {
+      // Create user via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userForm.email,
+        password: userForm.password,
+        options: {
+          data: {
+            full_name: userForm.full_name,
+          },
+        },
+      });
+
+      if (authError) throw authError;
+
+      if (authData.user) {
+        // Set user role if admin
+        if (userForm.role === 'admin') {
+          const { error: roleError } = await supabase.from('user_roles').insert({
+            user_id: authData.user.id,
+            role: 'admin',
+          });
+          if (roleError) console.error('Error setting role:', roleError);
+        }
+      }
+
+      toast.success('Usuario creado correctamente');
+      queryClient.invalidateQueries({ queryKey: ['users_with_roles'] });
+      setUserDialogOpen(false);
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast.error(error.message || 'Error al crear usuario');
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
   // Stats
   const activeCharges = charges.filter(c => c.is_active).length;
   const activePlans = plans.filter(p => p.is_active).length;
@@ -681,8 +747,9 @@ export default function Catalogs() {
           {/* ========== USERS TAB ========== */}
           <TabsContent value="users" className="mt-6">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Usuarios del Sistema</CardTitle>
+                {isAdmin && <Button onClick={handleNewUser}><Plus className="h-4 w-4 mr-2" />Nuevo Usuario</Button>}
               </CardHeader>
               <CardContent>
                 {loadingUsers ? <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div> : (
@@ -788,6 +855,34 @@ export default function Catalogs() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBankDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSaveBank} disabled={isSubmittingBank}>{isSubmittingBank && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{editingBank ? 'Guardar' : 'Crear'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Dialog */}
+      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nuevo Usuario</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2"><Label>Nombre Completo *</Label><Input value={userForm.full_name} onChange={(e) => setUserForm(prev => ({ ...prev, full_name: e.target.value }))} placeholder="Juan Pérez" /></div>
+            <div className="space-y-2"><Label>Email *</Label><Input type="email" value={userForm.email} onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))} placeholder="usuario@email.com" /></div>
+            <div className="space-y-2"><Label>Contraseña *</Label><Input type="password" value={userForm.password} onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder="Mínimo 6 caracteres" /></div>
+            <div className="space-y-2">
+              <Label>Rol</Label>
+              <Select value={userForm.role} onValueChange={(v) => setUserForm(prev => ({ ...prev, role: v }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Empleado</SelectItem>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreateUser} disabled={isSubmittingUser}>{isSubmittingUser && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Crear Usuario</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
