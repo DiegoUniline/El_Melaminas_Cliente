@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,10 +25,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, startOfMonth, eachMonthOfInterval, differenceInDays, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { toast } from 'sonner';
 import { 
   Calendar, Search, AlertTriangle, CheckCircle2, Clock, 
   DollarSign, Users, Filter, TrendingUp, AlertCircle,
-  Loader2
+  Loader2, RefreshCw, FileWarning
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
 
@@ -47,18 +49,23 @@ interface ClientMensualidad {
   balance: number;
   status: 'paid' | 'partial' | 'pending' | 'overdue';
   chargeId?: string;
+  hasCharge: boolean;
 }
 
 export default function Mensualidades() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('current');
   const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString());
   const [neighborhoodFilter, setNeighborhoodFilter] = useState<string>('all');
   const [daysFilter, setDaysFilter] = useState<string>('all');
+  const [chargeFilter, setChargeFilter] = useState<string>('all');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Fetch active clients with billing
-  const { data: clients = [], isLoading: loadingClients } = useQuery({
+  const { data: clients = [], isLoading: loadingClients, refetch: refetchClients } = useQuery({
     queryKey: ['clients-billing'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -72,6 +79,7 @@ export default function Mensualidades() {
           neighborhood,
           status,
           client_billing (
+            id,
             billing_day,
             monthly_fee,
             installation_date,
@@ -101,8 +109,8 @@ export default function Mensualidades() {
   });
 
   // Fetch charges
-  const { data: charges = [], isLoading: loadingCharges } = useQuery({
-    queryKey: ['all-charges'],
+  const { data: charges = [], isLoading: loadingCharges, refetch: refetchCharges } = useQuery({
+    queryKey: ['all-mensualidad-charges'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('client_charges')
@@ -124,8 +132,6 @@ export default function Mensualidades() {
   const mensualidades = useMemo(() => {
     const result: ClientMensualidad[] = [];
     const today = new Date();
-    const currentMonth = today.getMonth() + 1;
-    const currentYear = today.getFullYear();
 
     clients.forEach(client => {
       const billing = client.client_billing as any;
@@ -156,11 +162,14 @@ export default function Mensualidades() {
         const monthlyFee = billing.monthly_fee || 0;
         const balance = monthlyFee - totalPaid;
         
-        // Find charge
+        // Find charge - look for exact match first, then partial
         const charge = charges.find((c: any) => 
           c.client_id === client.id && 
-          c.description?.includes(`${month}/${year}`)
+          (c.description === `Mensualidad ${month}/${year}` || 
+           c.description?.includes(`${month}/${year}`))
         );
+        
+        const hasCharge = !!charge;
         
         // Determine status
         let status: 'paid' | 'partial' | 'pending' | 'overdue';
@@ -190,12 +199,73 @@ export default function Mensualidades() {
           balance,
           status,
           chargeId: charge?.id,
+          hasCharge,
         });
       });
     });
 
     return result;
   }, [clients, payments, charges]);
+  
+  // Generate charges for all clients missing them
+  const handleGenerateAllCharges = async () => {
+    setIsGenerating(true);
+    try {
+      const currentMonth = new Date().getMonth() + 1;
+      const currentYear = new Date().getFullYear();
+      
+      // Find mensualidades without charges for current month
+      const missingCharges = mensualidades.filter(m => 
+        m.month === currentMonth && 
+        m.year === currentYear && 
+        !m.hasCharge &&
+        m.status !== 'paid'
+      );
+      
+      if (missingCharges.length === 0) {
+        toast.info('Todos los cargos del mes actual ya están generados');
+        setIsGenerating(false);
+        return;
+      }
+      
+      const newCharges = missingCharges.map(m => ({
+        client_id: m.clientId,
+        description: `Mensualidad ${m.month}/${m.year}`,
+        amount: m.monthlyFee,
+        status: 'pending',
+        created_by: user?.id,
+      }));
+      
+      // Insert charges
+      const { error: chargeError } = await supabase
+        .from('client_charges')
+        .insert(newCharges);
+      
+      if (chargeError) throw chargeError;
+      
+      // Update balances for each client
+      for (const m of missingCharges) {
+        const client = clients.find(c => c.id === m.clientId);
+        const billing = client?.client_billing as any;
+        if (billing?.id) {
+          const newBalance = (billing.balance || 0) + m.monthlyFee;
+          await supabase
+            .from('client_billing')
+            .update({ balance: newBalance })
+            .eq('id', billing.id);
+        }
+      }
+      
+      toast.success(`${newCharges.length} cargos generados correctamente`);
+      refetchCharges();
+      refetchClients();
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    } catch (error: any) {
+      toast.error(error.message || 'Error al generar cargos');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   // Apply filters
   const filteredMensualidades = useMemo(() => {
@@ -240,16 +310,19 @@ export default function Mensualidades() {
 
       // Days filter
       if (daysFilter !== 'all') {
-        const days = parseInt(daysFilter);
         if (daysFilter === 'overdue' && m.daysUntilDue >= 0) return false;
         if (daysFilter === '0-5' && (m.daysUntilDue < 0 || m.daysUntilDue > 5)) return false;
         if (daysFilter === '6-15' && (m.daysUntilDue < 6 || m.daysUntilDue > 15)) return false;
         if (daysFilter === '16+' && m.daysUntilDue < 16) return false;
       }
+      
+      // Charge filter
+      if (chargeFilter === 'with' && !m.hasCharge) return false;
+      if (chargeFilter === 'without' && m.hasCharge) return false;
 
       return true;
     });
-  }, [mensualidades, searchTerm, statusFilter, monthFilter, yearFilter, neighborhoodFilter, daysFilter]);
+  }, [mensualidades, searchTerm, statusFilter, monthFilter, yearFilter, neighborhoodFilter, daysFilter, chargeFilter]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -341,6 +414,15 @@ export default function Mensualidades() {
               Control de cobro mensual de todos los clientes
             </p>
           </div>
+          <Button 
+            onClick={handleGenerateAllCharges} 
+            disabled={isGenerating}
+            className="bg-primary"
+          >
+            {isGenerating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Generar Cargos del Mes
+          </Button>
         </div>
 
         {/* Stats Cards */}
@@ -546,11 +628,27 @@ export default function Mensualidades() {
                   <SelectItem value="16+">16+ días</SelectItem>
                 </SelectContent>
               </Select>
+              
+              <Select value={chargeFilter} onValueChange={setChargeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Cargo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="with">Con cargo</SelectItem>
+                  <SelectItem value="without">Sin cargo</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <span className="text-sm text-muted-foreground">
                 Mostrando {filteredMensualidades.length} de {mensualidades.length} registros
+                {mensualidades.filter(m => !m.hasCharge && m.month === new Date().getMonth() + 1 && m.year === new Date().getFullYear()).length > 0 && (
+                  <span className="ml-2 text-amber-600 font-medium">
+                    ({mensualidades.filter(m => !m.hasCharge && m.month === new Date().getMonth() + 1 && m.year === new Date().getFullYear()).length} sin cargo este mes)
+                  </span>
+                )}
               </span>
               <Button 
                 variant="outline" 
@@ -562,6 +660,7 @@ export default function Mensualidades() {
                   setYearFilter(new Date().getFullYear().toString());
                   setNeighborhoodFilter('all');
                   setDaysFilter('all');
+                  setChargeFilter('all');
                 }}
               >
                 Limpiar filtros
@@ -589,6 +688,7 @@ export default function Mensualidades() {
                     <TableHead className="text-right">MENSUALIDAD</TableHead>
                     <TableHead className="text-right">PAGADO</TableHead>
                     <TableHead className="text-right">PENDIENTE</TableHead>
+                    <TableHead>CARGO</TableHead>
                     <TableHead>ESTADO</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -601,6 +701,7 @@ export default function Mensualidades() {
                           m.status === 'overdue' ? 'bg-red-50/50' :
                           m.status === 'paid' ? 'bg-emerald-50/30' :
                           m.daysUntilDue <= 5 ? 'bg-orange-50/50' :
+                          !m.hasCharge ? 'bg-purple-50/50' :
                           ''
                         }
                       >
@@ -633,13 +734,26 @@ export default function Mensualidades() {
                           {m.balance > 0 ? formatCurrency(m.balance) : '-'}
                         </TableCell>
                         <TableCell>
+                          {m.hasCharge ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Sí
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+                              <FileWarning className="h-3 w-3 mr-1" />
+                              No
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           {getStatusBadge(m.status, m.daysUntilDue)}
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                         No se encontraron mensualidades con los filtros aplicados
                       </TableCell>
                     </TableRow>
