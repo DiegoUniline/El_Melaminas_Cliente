@@ -440,28 +440,27 @@ export default function Catalogs() {
 
     setIsSubmittingUser(true);
     try {
-      // Create user via Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userForm.email,
-        password: userForm.password,
-        options: {
-          data: {
-            full_name: userForm.full_name,
-          },
+      // Call edge function to create user
+      const { data: session } = await supabase.auth.getSession();
+      
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session?.access_token}`,
         },
+        body: JSON.stringify({
+          email: userForm.email,
+          password: userForm.password,
+          full_name: userForm.full_name,
+          role: userForm.role,
+        }),
       });
 
-      if (authError) throw authError;
+      const result = await response.json();
 
-      if (authData.user) {
-        // Set user role if admin
-        if (userForm.role === 'admin') {
-          const { error: roleError } = await supabase.from('user_roles').insert({
-            user_id: authData.user.id,
-            role: 'admin',
-          });
-          if (roleError) console.error('Error setting role:', roleError);
-        }
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al crear usuario');
       }
 
       toast.success('Usuario creado correctamente');
