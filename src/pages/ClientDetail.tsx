@@ -51,7 +51,7 @@ import {
   Calendar, Image, Plus, StickyNote, CreditCard, 
   Receipt, CheckCircle2, Clock, AlertCircle, Edit, Loader2,
   History, ChevronDown, Settings, Router, CalendarClock, Trash2, 
-  MoreHorizontal, RefreshCw, Filter, ArrowLeft, Save, X
+  MoreHorizontal, RefreshCw, Filter, ArrowLeft, Save, X, Upload, Eye
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
 import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry } from '@/lib/phoneUtils';
@@ -162,8 +162,9 @@ export default function ClientDetail() {
   });
   const [editingService, setEditingService] = useState<any>(null);
   const [isUpdatingService, setIsUpdatingService] = useState(false);
-
-  // Fetch client data
+  
+  // Document upload states
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const { data: client, isLoading, refetch: refetchClient } = useQuery({
     queryKey: ['client', clientId],
     queryFn: async () => {
@@ -565,6 +566,45 @@ export default function ClientDetail() {
     const url = await getDocumentUrl(path);
     if (url) {
       window.open(url, '_blank');
+    }
+  };
+
+  const handleUploadDocument = async (file: File, fieldName: string) => {
+    if (!clientId) return;
+    
+    setUploadingDoc(fieldName);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${clientId}/${fieldName}_${Date.now()}.${fileExt}`;
+      
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from('client-documents')
+        .upload(fileName, file, { upsert: true });
+      
+      if (uploadError) throw uploadError;
+      
+      // Update client record
+      const { error: updateError } = await supabase
+        .from('clients')
+        .update({ [fieldName]: fileName })
+        .eq('id', clientId);
+      
+      if (updateError) throw updateError;
+      
+      toast.success('Documento subido correctamente');
+      refetchClient();
+    } catch (error: any) {
+      toast.error(error.message || 'Error al subir documento');
+    } finally {
+      setUploadingDoc(null);
+    }
+  };
+
+  const handleDocumentInputChange = (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUploadDocument(file, fieldName);
     }
   };
 
@@ -1372,75 +1412,222 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-6">
+                  {/* INE Suscriptor */}
                   <div className="space-y-3">
                     <h4 className="font-semibold">INE Suscriptor</h4>
-                    <div className="flex gap-2">
-                      <Button
-                        variant={client.ine_subscriber_front ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.ine_subscriber_front}
-                        onClick={() => handleDownloadDocument(client.ine_subscriber_front)}
-                      >
-                        <Image className="h-4 w-4 mr-2" />
-                        Frente
-                      </Button>
-                      <Button
-                        variant={client.ine_subscriber_back ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.ine_subscriber_back}
-                        onClick={() => handleDownloadDocument(client.ine_subscriber_back)}
-                      >
-                        <Image className="h-4 w-4 mr-2" />
-                        Reverso
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground w-16">Frente:</span>
+                        {client.ine_subscriber_front ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.ine_subscriber_front)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'ine_subscriber_front')}
+                            disabled={uploadingDoc === 'ine_subscriber_front'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'ine_subscriber_front'}>
+                            <span>
+                              {uploadingDoc === 'ine_subscriber_front' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground w-16">Reverso:</span>
+                        {client.ine_subscriber_back ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.ine_subscriber_back)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'ine_subscriber_back')}
+                            disabled={uploadingDoc === 'ine_subscriber_back'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'ine_subscriber_back'}>
+                            <span>
+                              {uploadingDoc === 'ine_subscriber_back' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
                     </div>
                   </div>
 
+                  {/* INE Adicional */}
                   <div className="space-y-3">
                     <h4 className="font-semibold">INE Adicional</h4>
-                    <div className="flex gap-2">
-                      <Button
-                        variant={client.ine_other_front ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.ine_other_front}
-                        onClick={() => handleDownloadDocument(client.ine_other_front)}
-                      >
-                        <Image className="h-4 w-4 mr-2" />
-                        Frente
-                      </Button>
-                      <Button
-                        variant={client.ine_other_back ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.ine_other_back}
-                        onClick={() => handleDownloadDocument(client.ine_other_back)}
-                      >
-                        <Image className="h-4 w-4 mr-2" />
-                        Reverso
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground w-16">Frente:</span>
+                        {client.ine_other_front ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.ine_other_front)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'ine_other_front')}
+                            disabled={uploadingDoc === 'ine_other_front'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'ine_other_front'}>
+                            <span>
+                              {uploadingDoc === 'ine_other_front' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground w-16">Reverso:</span>
+                        {client.ine_other_back ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.ine_other_back)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'ine_other_back')}
+                            disabled={uploadingDoc === 'ine_other_back'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'ine_other_back'}>
+                            <span>
+                              {uploadingDoc === 'ine_other_back' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Contrato Firmado */}
                   <div className="space-y-3 col-span-2">
                     <h4 className="font-semibold">Contrato Firmado</h4>
-                    <div className="flex gap-2">
-                      <Button
-                        variant={client.contract_page1 ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.contract_page1}
-                        onClick={() => handleDownloadDocument(client.contract_page1)}
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        Página 1
-                      </Button>
-                      <Button
-                        variant={client.contract_page2 ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={!client.contract_page2}
-                        onClick={() => handleDownloadDocument(client.contract_page2)}
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        Página 2
-                      </Button>
+                    <div className="flex gap-6">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Pág 1:</span>
+                        {client.contract_page1 ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.contract_page1)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'contract_page1')}
+                            disabled={uploadingDoc === 'contract_page1'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'contract_page1'}>
+                            <span>
+                              {uploadingDoc === 'contract_page1' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Pág 2:</span>
+                        {client.contract_page2 ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleDownloadDocument(client.contract_page2)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Sin archivo</span>
+                        )}
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={(e) => handleDocumentInputChange(e, 'contract_page2')}
+                            disabled={uploadingDoc === 'contract_page2'}
+                          />
+                          <Button variant="outline" size="sm" asChild disabled={uploadingDoc === 'contract_page2'}>
+                            <span>
+                              {uploadingDoc === 'contract_page2' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </div>
