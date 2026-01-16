@@ -23,14 +23,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { PhoneInput } from '@/components/shared/PhoneInput';
+import { PhoneCountry, formatPhoneNumber } from '@/lib/phoneUtils';
 
 const prospectSchema = z.object({
   first_name: z.string().min(1, 'El nombre es requerido').max(100),
   last_name_paterno: z.string().min(1, 'El apellido paterno es requerido').max(100),
   last_name_materno: z.string().max(100).optional(),
   phone1: z.string().min(10, 'El teléfono debe tener al menos 10 dígitos').max(15),
+  phone1_country: z.string().default('MX'),
   phone2: z.string().max(15).optional(),
+  phone2_country: z.string().default('MX'),
   phone3_signer: z.string().max(15).optional(),
+  phone3_country: z.string().default('MX'),
   street: z.string().min(1, 'La calle es requerida').max(200),
   exterior_number: z.string().min(1, 'El número exterior es requerido').max(20),
   interior_number: z.string().max(20).optional(),
@@ -68,8 +73,11 @@ export function ProspectFormDialog({
       last_name_paterno: '',
       last_name_materno: '',
       phone1: '',
+      phone1_country: 'MX',
       phone2: '',
+      phone2_country: 'MX',
       phone3_signer: '',
+      phone3_country: 'MX',
       street: '',
       exterior_number: '',
       interior_number: '',
@@ -93,8 +101,11 @@ export function ProspectFormDialog({
         last_name_paterno: values.last_name_paterno,
         last_name_materno: values.last_name_materno || null,
         phone1: values.phone1,
+        phone1_country: values.phone1_country,
         phone2: values.phone2 || null,
+        phone2_country: values.phone2_country,
         phone3_signer: values.phone3_signer || null,
+        phone3_country: values.phone3_country,
         street: values.street,
         exterior_number: values.exterior_number,
         interior_number: values.interior_number || null,
@@ -195,7 +206,13 @@ export function ProspectFormDialog({
                     <FormItem>
                       <FormLabel>Teléfono 1 *</FormLabel>
                       <FormControl>
-                        <Input placeholder="5551234567" {...field} />
+                        <PhoneInput
+                          value={field.value}
+                          onChange={(val) => field.onChange(val)}
+                          country={form.watch('phone1_country') as PhoneCountry}
+                          onCountryChange={(country) => form.setValue('phone1_country', country)}
+                          placeholder="317-131-5782"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -208,7 +225,13 @@ export function ProspectFormDialog({
                     <FormItem>
                       <FormLabel>Teléfono 2</FormLabel>
                       <FormControl>
-                        <Input placeholder="5559876543" {...field} />
+                        <PhoneInput
+                          value={field.value || ''}
+                          onChange={(val) => field.onChange(val)}
+                          country={form.watch('phone2_country') as PhoneCountry}
+                          onCountryChange={(country) => form.setValue('phone2_country', country)}
+                          placeholder="317-131-5782"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -221,7 +244,13 @@ export function ProspectFormDialog({
                     <FormItem>
                       <FormLabel>Teléfono de quien firmará</FormLabel>
                       <FormControl>
-                        <Input placeholder="5551112222" {...field} />
+                        <PhoneInput
+                          value={field.value || ''}
+                          onChange={(val) => field.onChange(val)}
+                          country={form.watch('phone3_country') as PhoneCountry}
+                          onCountryChange={(country) => form.setValue('phone3_country', country)}
+                          placeholder="317-131-5782"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

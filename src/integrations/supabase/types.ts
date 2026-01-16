@@ -293,8 +293,11 @@ export type Database = {
           last_name_paterno: string
           neighborhood: string
           phone1: string
+          phone1_country: string | null
           phone2: string | null
+          phone2_country: string | null
           phone3: string | null
+          phone3_country: string | null
           postal_code: string | null
           prospect_id: string | null
           status: Database["public"]["Enums"]["client_status"]
@@ -321,8 +324,11 @@ export type Database = {
           last_name_paterno: string
           neighborhood: string
           phone1: string
+          phone1_country?: string | null
           phone2?: string | null
+          phone2_country?: string | null
           phone3?: string | null
+          phone3_country?: string | null
           postal_code?: string | null
           prospect_id?: string | null
           status?: Database["public"]["Enums"]["client_status"]
@@ -349,8 +355,11 @@ export type Database = {
           last_name_paterno?: string
           neighborhood?: string
           phone1?: string
+          phone1_country?: string | null
           phone2?: string | null
+          phone2_country?: string | null
           phone3?: string | null
+          phone3_country?: string | null
           postal_code?: string | null
           prospect_id?: string | null
           status?: Database["public"]["Enums"]["client_status"]
@@ -676,6 +685,54 @@ export type Database = {
         }
         Relationships: []
       }
+      prospect_change_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          client_id: string | null
+          field_name: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          prospect_id: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          client_id?: string | null
+          field_name: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          prospect_id?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          client_id?: string | null
+          field_name?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          prospect_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prospect_change_history_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prospect_change_history_prospect_id_fkey"
+            columns: ["prospect_id"]
+            isOneToOne: false
+            referencedRelation: "prospects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       prospects: {
         Row: {
           antenna_ip: string | null
@@ -695,7 +752,10 @@ export type Database = {
           neighborhood: string
           notes: string | null
           phone1: string
+          phone1_country: string | null
           phone2: string | null
+          phone2_country: string | null
+          phone3_country: string | null
           phone3_signer: string | null
           postal_code: string | null
           request_date: string
@@ -723,7 +783,10 @@ export type Database = {
           neighborhood: string
           notes?: string | null
           phone1: string
+          phone1_country?: string | null
           phone2?: string | null
+          phone2_country?: string | null
+          phone3_country?: string | null
           phone3_signer?: string | null
           postal_code?: string | null
           request_date?: string
@@ -751,7 +814,10 @@ export type Database = {
           neighborhood?: string
           notes?: string | null
           phone1?: string
+          phone1_country?: string | null
           phone2?: string | null
+          phone2_country?: string | null
+          phone3_country?: string | null
           phone3_signer?: string | null
           postal_code?: string | null
           request_date?: string

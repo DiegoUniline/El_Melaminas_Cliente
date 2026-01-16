@@ -7,6 +7,7 @@ import { SearchInput } from '@/components/shared/SearchInput';
 import { DataTable } from '@/components/shared/DataTable';
 import { supabase } from '@/integrations/supabase/client';
 import { exportToCSV } from '@/lib/exportToExcel';
+import { translateStatus, formatPhoneDisplay, getCountryInfo } from '@/lib/phoneUtils';
 import { Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProspectDetailDialog } from '@/components/prospects/ProspectDetailDialog';
@@ -57,7 +58,16 @@ export default function ProspectsHistory() {
   }, [prospects, search]);
 
   const handleExport = () => {
-    exportToCSV(filteredProspects, 'prospectos_historial', [
+    // Map data to translate status to Spanish and format phones
+    const exportData = filteredProspects.map(p => ({
+      ...p,
+      status: translateStatus(p.status),
+      phone1: `${getCountryInfo((p as any).phone1_country).code} ${p.phone1}`,
+      phone2: p.phone2 ? `${getCountryInfo((p as any).phone2_country).code} ${p.phone2}` : '',
+      phone3_signer: p.phone3_signer ? `${getCountryInfo((p as any).phone3_country).code} ${p.phone3_signer}` : '',
+    }));
+
+    exportToCSV(exportData, 'prospectos_historial', [
       { key: 'first_name', header: 'Nombre' },
       { key: 'last_name_paterno', header: 'Apellido Paterno' },
       { key: 'last_name_materno', header: 'Apellido Materno' },
@@ -90,7 +100,13 @@ export default function ProspectsHistory() {
         </span>
       ),
     },
-    { key: 'phone1', header: 'Teléfono' },
+    { 
+      key: 'phone1', 
+      header: 'Teléfono',
+      render: (p: Prospect) => (
+        <span>{formatPhoneDisplay(p.phone1, (p as any).phone1_country)}</span>
+      ),
+    },
     {
       key: 'address',
       header: 'Dirección',

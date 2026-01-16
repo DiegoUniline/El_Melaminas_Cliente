@@ -28,6 +28,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Upload, Calculator } from 'lucide-react';
 import { calculateProration, formatCurrency, calculateInitialBalance } from '@/lib/billing';
 import type { Client, ClientBilling, Equipment } from '@/types/database';
+import { PhoneInput } from '@/components/shared/PhoneInput';
+import { PhoneCountry } from '@/lib/phoneUtils';
 
 type ClientWithDetails = Client & {
   client_billing: ClientBilling | null;
@@ -40,8 +42,11 @@ const clientSchema = z.object({
   last_name_paterno: z.string().min(2, 'El apellido paterno es requerido'),
   last_name_materno: z.string().optional(),
   phone1: z.string().min(10, 'El teléfono debe tener al menos 10 dígitos'),
+  phone1_country: z.string().default('MX'),
   phone2: z.string().optional(),
+  phone2_country: z.string().default('MX'),
   phone3: z.string().optional(),
+  phone3_country: z.string().default('MX'),
   // Address
   street: z.string().min(2, 'La calle es requerida'),
   exterior_number: z.string().min(1, 'El número exterior es requerido'),
@@ -117,8 +122,11 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
       last_name_paterno: '',
       last_name_materno: '',
       phone1: '',
+      phone1_country: 'MX',
       phone2: '',
+      phone2_country: 'MX',
       phone3: '',
+      phone3_country: 'MX',
       street: '',
       exterior_number: '',
       interior_number: '',
@@ -186,8 +194,11 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
         last_name_paterno: client.last_name_paterno,
         last_name_materno: client.last_name_materno || '',
         phone1: client.phone1,
+        phone1_country: (client as any).phone1_country || 'MX',
         phone2: client.phone2 || '',
+        phone2_country: (client as any).phone2_country || 'MX',
         phone3: client.phone3 || '',
+        phone3_country: (client as any).phone3_country || 'MX',
         street: client.street,
         exterior_number: client.exterior_number,
         interior_number: client.interior_number || '',
@@ -221,8 +232,11 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
         last_name_paterno: '',
         last_name_materno: '',
         phone1: '',
+        phone1_country: 'MX',
         phone2: '',
+        phone2_country: 'MX',
         phone3: '',
+        phone3_country: 'MX',
         street: '',
         exterior_number: '',
         interior_number: '',
@@ -575,7 +589,13 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                       <FormItem>
                         <FormLabel>Teléfono 1 *</FormLabel>
                         <FormControl>
-                          <Input {...field} type="tel" />
+                          <PhoneInput
+                            value={field.value}
+                            onChange={field.onChange}
+                            country={form.watch('phone1_country') as PhoneCountry}
+                            onCountryChange={(c) => form.setValue('phone1_country', c)}
+                            placeholder="317-131-5782"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -588,7 +608,13 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                       <FormItem>
                         <FormLabel>Teléfono 2</FormLabel>
                         <FormControl>
-                          <Input {...field} type="tel" />
+                          <PhoneInput
+                            value={field.value || ''}
+                            onChange={field.onChange}
+                            country={form.watch('phone2_country') as PhoneCountry}
+                            onCountryChange={(c) => form.setValue('phone2_country', c)}
+                            placeholder="317-131-5782"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -601,7 +627,13 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                       <FormItem>
                         <FormLabel>Teléfono 3</FormLabel>
                         <FormControl>
-                          <Input {...field} type="tel" />
+                          <PhoneInput
+                            value={field.value || ''}
+                            onChange={field.onChange}
+                            country={form.watch('phone3_country') as PhoneCountry}
+                            onCountryChange={(c) => form.setValue('phone3_country', c)}
+                            placeholder="317-131-5782"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
