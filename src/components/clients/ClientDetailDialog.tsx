@@ -35,14 +35,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { format, addMonths, isBefore, startOfDay } from 'date-fns';
+import { format, addMonths, isBefore, startOfDay, subMonths, startOfMonth, endOfMonth, eachMonthOfInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   User, MapPin, Phone, FileText, Wifi, DollarSign, 
   Calendar, Image, Plus, StickyNote, CreditCard, 
   Receipt, CheckCircle2, Clock, AlertCircle, Edit, Loader2,
-  History, ChevronDown, Settings, Router
+  History, ChevronDown, Settings, Router, CalendarClock, XCircle, PlayCircle
 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
 import { formatCurrency } from '@/lib/billing';
 import { ChangePlanDialog } from './ChangePlanDialog';
 import { ChangeBillingDayDialog } from './ChangeBillingDayDialog';
@@ -99,6 +100,23 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
   const [selectedChargeType, setSelectedChargeType] = useState('');
   const [chargeAmount, setChargeAmount] = useState('');
   const [chargeDescription, setChargeDescription] = useState('');
+  
+  // Mensualidad manual states
+  const [isAddingMensualidad, setIsAddingMensualidad] = useState(false);
+  const [mensualidadMonth, setMensualidadMonth] = useState(new Date().getMonth() + 1);
+  const [mensualidadYear, setMensualidadYear] = useState(new Date().getFullYear());
+  const [mensualidadAmount, setMensualidadAmount] = useState('');
+  
+  // Service states
+  const [isAddingService, setIsAddingService] = useState(false);
+  const [newServiceData, setNewServiceData] = useState({
+    service_type: 'maintenance',
+    title: '',
+    description: '',
+    scheduled_date: format(new Date(), 'yyyy-MM-dd'),
+    scheduled_time: '09:00',
+    charge_amount: 0,
+  });
 
   // Fetch billing (to get updated balance)
   const { data: billingData, refetch: refetchBilling } = useQuery({
@@ -178,6 +196,37 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
         .eq('is_active', true)
         .order('name');
 
+      if (error) throw error;
+      return data;
+    },
+    enabled: open,
+  });
+
+  // Fetch client services
+  const { data: clientServices = [], refetch: refetchServices } = useQuery({
+    queryKey: ['client_services', client?.id],
+    queryFn: async () => {
+      if (!client?.id) return [];
+      const { data, error } = await supabase
+        .from('scheduled_services')
+        .select('*')
+        .eq('client_id', client.id)
+        .order('scheduled_date', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!client?.id && open,
+  });
+
+  // Fetch employees for service assignment
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .order('full_name');
       if (error) throw error;
       return data;
     },
@@ -300,6 +349,144 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
       setChargeAmount(selected.default_amount.toString());
       setChargeDescription(selected.name);
     }
+  };
+
+  // Generar historial de mensualidades
+  const generateMensualidades = () => {
+    if (!billing?.installation_date) return [];
+    
+    const startDate = startOfMonth(new Date(billing.installation_date));
+    const endDate = startOfMonth(new Date());
+    const months = eachMonthOfInterval({ start: startDate, end: endDate });
+    
+    return months.map(date => {
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      const monthPayments = payments.filter(p => 
+        p.period_month === month && p.period_year === year
+      );
+      const totalPaid = monthPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const monthlyFee = billing?.monthly_fee || 0;
+      const isPaid = totalPaid >= monthlyFee;
+      const isPartial = totalPaid > 0 && totalPaid < monthlyFee;
+      
+      return {
+        month,
+        year,
+        monthName: format(date, 'MMMM yyyy', { locale: es }),
+        monthlyFee,
+        totalPaid,
+        balance: monthlyFee - totalPaid,
+        isPaid,
+        isPartial,
+        payments: monthPayments,
+      };
+    }).reverse();
+  };
+
+  const mensualidades = generateMensualidades();
+
+  // Agregar mensualidad manual
+  const handleAddMensualidad = async () => {
+    if (!mensualidadAmount || !client.id) return;
+    
+    setIsAddingMensualidad(true);
+    try {
+      const amount = parseFloat(mensualidadAmount);
+      if (isNaN(amount) || amount <= 0) {
+        toast.error('El monto debe ser mayor a 0');
+        return;
+      }
+
+      // Insert charge for mensualidad
+      const { error: chargeError } = await supabase.from('client_charges').insert({
+        client_id: client.id,
+        description: `Mensualidad ${mensualidadMonth}/${mensualidadYear}`,
+        amount,
+        status: 'pending',
+        created_by: user?.id,
+      });
+
+      if (chargeError) throw chargeError;
+
+      // Update balance
+      if (billing) {
+        const newBalance = (billing.balance || 0) + amount;
+        await supabase
+          .from('client_billing')
+          .update({ balance: newBalance })
+          .eq('client_id', client.id);
+      }
+      
+      toast.success('Mensualidad cargada correctamente');
+      setMensualidadAmount('');
+      refetchCharges();
+      refetchBilling();
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['payments', client.id] });
+    } catch (error: any) {
+      toast.error(error.message || 'Error al cargar mensualidad');
+    } finally {
+      setIsAddingMensualidad(false);
+    }
+  };
+
+  // Crear servicio para este cliente
+  const handleAddClientService = async () => {
+    if (!newServiceData.title || !client.id) {
+      toast.error('El título es requerido');
+      return;
+    }
+    
+    setIsAddingService(true);
+    try {
+      const { error } = await supabase.from('scheduled_services').insert([{
+        client_id: client.id,
+        assigned_to: user?.id || '',
+        service_type: newServiceData.service_type as 'installation' | 'maintenance' | 'equipment_change' | 'relocation' | 'repair' | 'disconnection' | 'other',
+        title: newServiceData.title,
+        description: newServiceData.description || null,
+        scheduled_date: newServiceData.scheduled_date,
+        scheduled_time: newServiceData.scheduled_time || null,
+        charge_amount: newServiceData.charge_amount,
+        created_by: user?.id,
+      }]);
+
+      if (error) throw error;
+      
+      toast.success('Servicio agendado');
+      setNewServiceData({
+        service_type: 'maintenance',
+        title: '',
+        description: '',
+        scheduled_date: format(new Date(), 'yyyy-MM-dd'),
+        scheduled_time: '09:00',
+        charge_amount: 0,
+      });
+      refetchServices();
+      queryClient.invalidateQueries({ queryKey: ['scheduled-services'] });
+    } catch (error: any) {
+      toast.error(error.message || 'Error al crear servicio');
+    } finally {
+      setIsAddingService(false);
+    }
+  };
+
+  const SERVICE_TYPES: Record<string, { label: string; color: string }> = {
+    installation: { label: 'Instalación', color: 'bg-blue-500' },
+    maintenance: { label: 'Mantenimiento', color: 'bg-yellow-500' },
+    equipment_change: { label: 'Cambio de Equipo', color: 'bg-purple-500' },
+    relocation: { label: 'Reubicación', color: 'bg-orange-500' },
+    repair: { label: 'Reparación', color: 'bg-red-500' },
+    disconnection: { label: 'Desconexión', color: 'bg-gray-500' },
+    other: { label: 'Otro', color: 'bg-slate-500' },
+  };
+
+  const SERVICE_STATUS: Record<string, { label: string; color: string }> = {
+    scheduled: { label: 'Programado', color: 'bg-blue-500' },
+    in_progress: { label: 'En Progreso', color: 'bg-yellow-500' },
+    completed: { label: 'Completado', color: 'bg-green-500' },
+    cancelled: { label: 'Cancelado', color: 'bg-red-500' },
   };
 
   return (
@@ -451,9 +638,15 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
         {/* Tabs */}
         <div className="px-6 pb-6">
           <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-            <TabsList className="bg-muted/50 p-1 h-auto">
+            <TabsList className="bg-muted/50 p-1 h-auto flex-wrap">
               <TabsTrigger value="servicios" className="data-[state=active]:bg-background">
                 Servicios
+              </TabsTrigger>
+              <TabsTrigger value="mensualidades" className="data-[state=active]:bg-background">
+                Mensualidades
+              </TabsTrigger>
+              <TabsTrigger value="servicios-programados" className="data-[state=active]:bg-background">
+                Agenda
               </TabsTrigger>
               <TabsTrigger value="estado-cuenta" className="data-[state=active]:bg-background">
                 Estado de Cuenta
@@ -608,6 +801,275 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+
+            {/* TAB MENSUALIDADES */}
+            <TabsContent value="mensualidades" className="mt-4 space-y-4">
+              {/* Cargar mensualidad manual */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Plus className="h-5 w-5" />
+                    Cargar Mensualidad Manual
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-4 gap-3 items-end">
+                    <div className="space-y-2">
+                      <Label>Mes</Label>
+                      <Select 
+                        value={mensualidadMonth.toString()} 
+                        onValueChange={(v) => setMensualidadMonth(parseInt(v))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 12 }, (_, i) => (
+                            <SelectItem key={i + 1} value={(i + 1).toString()}>
+                              {format(new Date(2024, i, 1), 'MMMM', { locale: es })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Año</Label>
+                      <Select 
+                        value={mensualidadYear.toString()} 
+                        onValueChange={(v) => setMensualidadYear(parseInt(v))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 5 }, (_, i) => {
+                            const year = new Date().getFullYear() - 2 + i;
+                            return (
+                              <SelectItem key={year} value={year.toString()}>
+                                {year}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Monto</Label>
+                      <Input
+                        type="number"
+                        placeholder={formatCurrency(billing?.monthly_fee || 0)}
+                        value={mensualidadAmount}
+                        onChange={(e) => setMensualidadAmount(e.target.value)}
+                      />
+                    </div>
+                    <Button onClick={handleAddMensualidad} disabled={isAddingMensualidad || !mensualidadAmount}>
+                      {isAddingMensualidad && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Cargar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Historial de mensualidades */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Historial de Mensualidades
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {mensualidades.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>PERÍODO</TableHead>
+                          <TableHead>TARIFA</TableHead>
+                          <TableHead>PAGADO</TableHead>
+                          <TableHead>PENDIENTE</TableHead>
+                          <TableHead>ESTATUS</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {mensualidades.map((m) => (
+                          <TableRow key={`${m.month}-${m.year}`}>
+                            <TableCell className="font-medium capitalize">{m.monthName}</TableCell>
+                            <TableCell>{formatCurrency(m.monthlyFee)}</TableCell>
+                            <TableCell className="text-emerald-600">{formatCurrency(m.totalPaid)}</TableCell>
+                            <TableCell className={m.balance > 0 ? 'text-red-600' : ''}>
+                              {m.balance > 0 ? formatCurrency(m.balance) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {m.isPaid ? (
+                                <Badge className="bg-emerald-100 text-emerald-700">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Pagado
+                                </Badge>
+                              ) : m.isPartial ? (
+                                <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Parcial
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  Pendiente
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">
+                      No hay historial de mensualidades
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* TAB SERVICIOS PROGRAMADOS */}
+            <TabsContent value="servicios-programados" className="mt-4 space-y-4">
+              {/* Crear nuevo servicio */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CalendarClock className="h-5 w-5" />
+                    Agendar Servicio
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="space-y-2">
+                      <Label>Tipo de Servicio</Label>
+                      <Select 
+                        value={newServiceData.service_type} 
+                        onValueChange={(v) => setNewServiceData({ ...newServiceData, service_type: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(SERVICE_TYPES).map(([key, val]) => (
+                            <SelectItem key={key} value={key}>{val.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Título</Label>
+                      <Input
+                        value={newServiceData.title}
+                        onChange={(e) => setNewServiceData({ ...newServiceData, title: e.target.value })}
+                        placeholder="Ej: Revisión de señal"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="space-y-2">
+                      <Label>Fecha</Label>
+                      <Input
+                        type="date"
+                        value={newServiceData.scheduled_date}
+                        onChange={(e) => setNewServiceData({ ...newServiceData, scheduled_date: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Hora</Label>
+                      <Input
+                        type="time"
+                        value={newServiceData.scheduled_time}
+                        onChange={(e) => setNewServiceData({ ...newServiceData, scheduled_time: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cargo ($)</Label>
+                      <Input
+                        type="number"
+                        value={newServiceData.charge_amount}
+                        onChange={(e) => setNewServiceData({ ...newServiceData, charge_amount: parseFloat(e.target.value) || 0 })}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <Label>Descripción</Label>
+                    <Textarea
+                      value={newServiceData.description}
+                      onChange={(e) => setNewServiceData({ ...newServiceData, description: e.target.value })}
+                      placeholder="Detalles del servicio..."
+                      rows={2}
+                    />
+                  </div>
+                  <Button onClick={handleAddClientService} disabled={isAddingService || !newServiceData.title}>
+                    {isAddingService && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agendar Servicio
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Historial de servicios */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Servicios del Cliente
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {clientServices.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>FECHA</TableHead>
+                          <TableHead>TIPO</TableHead>
+                          <TableHead>TÍTULO</TableHead>
+                          <TableHead>CARGO</TableHead>
+                          <TableHead>ESTATUS</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {clientServices.map((service: any) => {
+                          const typeInfo = SERVICE_TYPES[service.service_type] || SERVICE_TYPES.other;
+                          const statusInfo = SERVICE_STATUS[service.status] || SERVICE_STATUS.scheduled;
+                          return (
+                            <TableRow key={service.id}>
+                              <TableCell>
+                                {format(new Date(service.scheduled_date), 'dd/MM/yyyy')}
+                                {service.scheduled_time && (
+                                  <span className="text-muted-foreground text-xs ml-1">
+                                    {service.scheduled_time.slice(0, 5)}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{typeInfo.label}</Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">{service.title}</TableCell>
+                              <TableCell>
+                                {service.charge_amount > 0 ? formatCurrency(service.charge_amount) : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={`${statusInfo.color} text-white`}>
+                                  {statusInfo.label}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">
+                      No hay servicios registrados para este cliente
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* TAB ESTADO DE CUENTA */}
