@@ -415,40 +415,42 @@ export default function ClientDetail() {
   // Handlers
   const handleCancelEdit = () => {
     if (client) {
+      const c = client as any;
       setEditedClient({
-        first_name: client.first_name,
-        last_name_paterno: client.last_name_paterno,
-        last_name_materno: client.last_name_materno || '',
-        phone1: client.phone1,
-        phone1_country: client.phone1_country || 'MX',
-        phone2: client.phone2 || '',
-        phone2_country: client.phone2_country || 'MX',
-        phone3_signer: client.phone3_signer || '',
-        phone3_country: client.phone3_country || 'MX',
-        street: client.street,
-        exterior_number: client.exterior_number,
-        interior_number: client.interior_number || '',
-        neighborhood: client.neighborhood,
-        city: client.city,
-        postal_code: client.postal_code || '',
+        first_name: c.first_name,
+        last_name_paterno: c.last_name_paterno,
+        last_name_materno: c.last_name_materno || '',
+        phone1: c.phone1,
+        phone1_country: c.phone1_country || 'MX',
+        phone2: c.phone2 || '',
+        phone2_country: c.phone2_country || 'MX',
+        phone3_signer: c.phone3_signer || '',
+        phone3_country: c.phone3_country || 'MX',
+        street: c.street,
+        exterior_number: c.exterior_number,
+        interior_number: c.interior_number || '',
+        neighborhood: c.neighborhood,
+        city: c.city,
+        postal_code: c.postal_code || '',
       });
       
       if (client.equipment?.[0]) {
+        const eq = client.equipment[0] as any;
         setEditedEquipment({
-          antenna_brand: client.equipment[0].antenna_brand || '',
-          antenna_model: client.equipment[0].antenna_model || '',
-          antenna_serial: client.equipment[0].antenna_serial || '',
-          antenna_mac: client.equipment[0].antenna_mac || '',
-          antenna_ip: client.equipment[0].antenna_ip || '',
-          antenna_ssid: client.equipment[0].antenna_ssid || '',
-          router_brand: client.equipment[0].router_brand || '',
-          router_model: client.equipment[0].router_model || '',
-          router_serial: client.equipment[0].router_serial || '',
-          router_mac: client.equipment[0].router_mac || '',
-          router_ip: client.equipment[0].router_ip || '',
-          router_network_name: client.equipment[0].router_network_name || '',
-          router_password: client.equipment[0].router_password || '',
-          installer_name: client.equipment[0].installer_name || '',
+          antenna_brand: eq.antenna_brand || '',
+          antenna_model: eq.antenna_model || '',
+          antenna_serial: eq.antenna_serial || '',
+          antenna_mac: eq.antenna_mac || '',
+          antenna_ip: eq.antenna_ip || '',
+          antenna_ssid: eq.antenna_ssid || '',
+          router_brand: eq.router_brand || '',
+          router_model: eq.router_model || '',
+          router_serial: eq.router_serial || '',
+          router_mac: eq.router_mac || '',
+          router_ip: eq.router_ip || '',
+          router_network_name: eq.router_network_name || '',
+          router_password: eq.router_password || '',
+          installer_name: eq.installer_name || '',
         });
       }
     }

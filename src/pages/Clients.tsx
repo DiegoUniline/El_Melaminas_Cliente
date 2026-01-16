@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -57,6 +58,7 @@ function isNearDue(billingDay: number): boolean {
 }
 
 export default function Clients() {
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('active');
   const [search, setSearch] = useState('');
@@ -150,8 +152,7 @@ export default function Clients() {
   };
 
   const handleView = (client: ClientWithDetails) => {
-    setSelectedClient(client);
-    setShowDetailDialog(true);
+    navigate(`/clients/${client.id}`);
   };
 
   const handleEdit = (client: ClientWithDetails) => {
