@@ -10,7 +10,6 @@ import {
   Wifi
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Sidebar,
@@ -61,8 +60,8 @@ export function AppSidebar() {
             <Wifi className="h-6 w-6 text-sidebar-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-sidebar-foreground">ISP Manager</h1>
-            <p className="text-xs text-sidebar-foreground/70">Sistema de Gestión</p>
+            <h1 className="text-lg font-bold text-sidebar-foreground">Skynet</h1>
+            <p className="text-xs text-sidebar-foreground/70">Sistema de Gestión ISP</p>
           </div>
         </div>
       </SidebarHeader>

@@ -28,7 +28,6 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Fetch clients count
         const { count: totalClients } = await supabase
           .from('clients')
           .select('*', { count: 'exact', head: true });
@@ -38,19 +37,16 @@ export default function Dashboard() {
           .select('*', { count: 'exact', head: true })
           .eq('status', 'active');
 
-        // Fetch pending prospects
         const { count: pendingProspects } = await supabase
           .from('prospects')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending');
 
-        // Fetch clients with negative balance (debt)
         const { count: clientsWithDebt } = await supabase
           .from('client_billing')
           .select('*', { count: 'exact', head: true })
           .lt('balance', 0);
 
-        // Fetch current month payments
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
@@ -63,7 +59,6 @@ export default function Dashboard() {
 
         const monthlyIncome = monthPayments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
 
-        // Recent payments count (last 7 days)
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { count: recentPayments } = await supabase
           .from('payments')
@@ -126,7 +121,6 @@ export default function Dashboard() {
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
-        {/* Stats Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {statCards.map((card) => (
             <Card key={card.title} className="animate-fade-in">
@@ -146,7 +140,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Quick Info */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>

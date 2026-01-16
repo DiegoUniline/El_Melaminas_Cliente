@@ -53,8 +53,8 @@ export default function Register() {
               <Wifi className="h-7 w-7 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">ISP Manager</h1>
-              <p className="text-sm text-muted-foreground">Sistema de Gestión</p>
+              <h1 className="text-2xl font-bold text-foreground">Skynet</h1>
+              <p className="text-sm text-muted-foreground">Sistema de Gestión ISP</p>
             </div>
           </div>
         </div>
