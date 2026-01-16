@@ -190,9 +190,9 @@ export default function Services() {
   // Create service mutation
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const { error } = await supabase.from('scheduled_services').insert({
-        client_id: data.client_id || null,
-        prospect_id: data.prospect_id || null,
+      const insertData = {
+        client_id: data.client_id && data.client_id !== '' ? data.client_id : null,
+        prospect_id: data.prospect_id && data.prospect_id !== '' ? data.prospect_id : null,
         assigned_to: data.assigned_to,
         service_type: data.service_type,
         title: data.title,
@@ -202,8 +202,19 @@ export default function Services() {
         estimated_duration: data.estimated_duration,
         charge_amount: data.charge_amount,
         created_by: user?.id,
-      });
+      };
+      
+      console.log('Creating service with data:', insertData);
+      
+      const { data: result, error } = await supabase
+        .from('scheduled_services')
+        .insert(insertData)
+        .select();
+      
+      console.log('Insert result:', result, 'Error:', error);
+      
       if (error) throw error;
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-services'] });
@@ -211,7 +222,8 @@ export default function Services() {
       setDialogOpen(false);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
+      console.error('Create service error:', error);
       toast.error('Error al agendar servicio: ' + error.message);
     },
   });
