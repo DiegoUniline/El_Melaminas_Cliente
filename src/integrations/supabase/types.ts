@@ -727,6 +727,91 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_services: {
+        Row: {
+          assigned_to: string
+          charge_amount: number | null
+          charge_id: string | null
+          client_id: string | null
+          completed_at: string | null
+          completed_notes: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          estimated_duration: number | null
+          id: string
+          prospect_id: string | null
+          scheduled_date: string
+          scheduled_time: string | null
+          service_type: Database["public"]["Enums"]["service_type"]
+          status: Database["public"]["Enums"]["service_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to: string
+          charge_amount?: number | null
+          charge_id?: string | null
+          client_id?: string | null
+          completed_at?: string | null
+          completed_notes?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          estimated_duration?: number | null
+          id?: string
+          prospect_id?: string | null
+          scheduled_date: string
+          scheduled_time?: string | null
+          service_type?: Database["public"]["Enums"]["service_type"]
+          status?: Database["public"]["Enums"]["service_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string
+          charge_amount?: number | null
+          charge_id?: string | null
+          client_id?: string | null
+          completed_at?: string | null
+          completed_notes?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          estimated_duration?: number | null
+          id?: string
+          prospect_id?: string | null
+          scheduled_date?: string
+          scheduled_time?: string | null
+          service_type?: Database["public"]["Enums"]["service_type"]
+          status?: Database["public"]["Enums"]["service_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_services_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "client_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_services_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_services_prospect_id_fkey"
+            columns: ["prospect_id"]
+            isOneToOne: false
+            referencedRelation: "prospects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       service_plans: {
         Row: {
           created_at: string | null
@@ -802,6 +887,15 @@ export type Database = {
       app_role: "admin" | "employee"
       client_status: "active" | "cancelled"
       prospect_status: "pending" | "finalized" | "cancelled"
+      service_status: "scheduled" | "in_progress" | "completed" | "cancelled"
+      service_type:
+        | "installation"
+        | "maintenance"
+        | "equipment_change"
+        | "relocation"
+        | "repair"
+        | "disconnection"
+        | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -932,6 +1026,16 @@ export const Constants = {
       app_role: ["admin", "employee"],
       client_status: ["active", "cancelled"],
       prospect_status: ["pending", "finalized", "cancelled"],
+      service_status: ["scheduled", "in_progress", "completed", "cancelled"],
+      service_type: [
+        "installation",
+        "maintenance",
+        "equipment_change",
+        "relocation",
+        "repair",
+        "disconnection",
+        "other",
+      ],
     },
   },
 } as const
