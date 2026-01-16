@@ -12,7 +12,8 @@ import {
   CalendarClock,
   Receipt,
   MessageCircle,
-  Shield
+  Shield,
+  Smartphone
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -137,6 +138,18 @@ export function AppSidebar() {
                     <NavLink to="/permissions">
                       <Shield className="h-4 w-4" />
                       <span>Permisos</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {/* Technician Dashboard link */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/technician'}
+                  >
+                    <NavLink to="/technician">
+                      <Smartphone className="h-4 w-4" />
+                      <span>Vista Técnico</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
