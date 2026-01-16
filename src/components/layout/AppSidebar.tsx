@@ -11,10 +11,12 @@ import {
   Tag,
   CalendarClock,
   Receipt,
-  MessageCircle
+  MessageCircle,
+  Shield
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions, type Module } from '@/hooks/usePermissions';
 import {
   Sidebar,
   SidebarContent,
@@ -30,25 +32,33 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
-const mainNavItems = [
-  { title: 'Dashboard', icon: Home, href: '/dashboard' },
-  { title: 'Prospectos', icon: UserPlus, href: '/prospects' },
-  { title: 'Historial Prospectos', icon: History, href: '/prospects/history' },
-  { title: 'Clientes', icon: Users, href: '/clients' },
-  { title: 'Mensualidades', icon: Receipt, href: '/mensualidades' },
-  { title: 'Pagos', icon: CreditCard, href: '/payments' },
-  { title: 'Agenda Servicios', icon: CalendarClock, href: '/services' },
-  { title: 'Chat Interno', icon: MessageCircle, href: '/chat' },
+interface NavItem {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  href: string;
+  module: Module;
+}
+
+const mainNavItems: NavItem[] = [
+  { title: 'Dashboard', icon: Home, href: '/dashboard', module: 'dashboard' },
+  { title: 'Prospectos', icon: UserPlus, href: '/prospects', module: 'prospects' },
+  { title: 'Historial Prospectos', icon: History, href: '/prospects/history', module: 'prospects_history' },
+  { title: 'Clientes', icon: Users, href: '/clients', module: 'clients' },
+  { title: 'Mensualidades', icon: Receipt, href: '/mensualidades', module: 'mensualidades' },
+  { title: 'Pagos', icon: CreditCard, href: '/payments', module: 'payments' },
+  { title: 'Agenda Servicios', icon: CalendarClock, href: '/services', module: 'services' },
+  { title: 'Chat Interno', icon: MessageCircle, href: '/chat', module: 'chat' },
 ];
 
-const adminNavItems = [
-  { title: 'Catálogos', icon: Tag, href: '/catalogs' },
-  { title: 'Reportes', icon: BarChart3, href: '/reports' },
-  { title: 'Configuración', icon: Settings, href: '/settings' },
+const adminNavItems: NavItem[] = [
+  { title: 'Catálogos', icon: Tag, href: '/catalogs', module: 'catalogs' },
+  { title: 'Reportes', icon: BarChart3, href: '/reports', module: 'reports' },
+  { title: 'Configuración', icon: Settings, href: '/settings', module: 'settings' },
 ];
 
 export function AppSidebar() {
   const { profile, isAdmin, signOut } = useAuth();
+  const { canView } = usePermissions();
   const location = useLocation();
 
   const getInitials = (name: string) => {
@@ -59,6 +69,10 @@ export function AppSidebar() {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  // Filter nav items based on permissions (admins see all)
+  const visibleMainItems = mainNavItems.filter(item => isAdmin || canView(item.module));
+  const visibleAdminItems = adminNavItems.filter(item => isAdmin || canView(item.module));
 
   return (
     <Sidebar>
@@ -79,7 +93,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {visibleMainItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild
@@ -101,7 +115,7 @@ export function AppSidebar() {
             <SidebarGroupLabel>Administración</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminNavItems.map((item) => (
+                {visibleAdminItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       asChild
@@ -114,6 +128,18 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+                {/* Permissions link - admin only */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/permissions'}
+                  >
+                    <NavLink to="/permissions">
+                      <Shield className="h-4 w-4" />
+                      <span>Permisos</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

@@ -21,6 +21,7 @@ import Settings from "./pages/Settings";
 import Services from "./pages/Services";
 import Mensualidades from "./pages/Mensualidades";
 import Chat from "./pages/Chat";
+import Permissions from "./pages/Permissions";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/catalogs" element={<ProtectedRoute><Catalogs /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/permissions" element={<ProtectedRoute><Permissions /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
