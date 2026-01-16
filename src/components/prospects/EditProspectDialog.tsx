@@ -130,6 +130,50 @@ export function EditProspectDialog({
   const onSubmit = async (values: ProspectFormValues) => {
     setIsLoading(true);
     try {
+      // Detect changes to save in history
+      const fieldsToTrack: { key: keyof ProspectFormValues; label: string }[] = [
+        { key: 'first_name', label: 'Nombre' },
+        { key: 'last_name_paterno', label: 'Apellido Paterno' },
+        { key: 'last_name_materno', label: 'Apellido Materno' },
+        { key: 'phone1', label: 'Teléfono 1' },
+        { key: 'phone1_country', label: 'País Teléfono 1' },
+        { key: 'phone2', label: 'Teléfono 2' },
+        { key: 'phone2_country', label: 'País Teléfono 2' },
+        { key: 'phone3_signer', label: 'Teléfono Firmante' },
+        { key: 'phone3_country', label: 'País Teléfono 3' },
+        { key: 'street', label: 'Calle' },
+        { key: 'exterior_number', label: 'No. Exterior' },
+        { key: 'interior_number', label: 'No. Interior' },
+        { key: 'neighborhood', label: 'Colonia' },
+        { key: 'city', label: 'Ciudad' },
+        { key: 'postal_code', label: 'Código Postal' },
+        { key: 'work_type', label: 'Tipo de Trabajo' },
+        { key: 'request_date', label: 'Fecha de Solicitud' },
+        { key: 'assigned_date', label: 'Fecha Asignada' },
+        { key: 'ssid', label: 'SSID' },
+        { key: 'antenna_ip', label: 'IP Antena' },
+        { key: 'notes', label: 'Notas' },
+        { key: 'cancellation_reason', label: 'Motivo de Cancelación' },
+      ];
+
+      const changes: { field_name: string; old_value: string | null; new_value: string | null }[] = [];
+
+      fieldsToTrack.forEach(({ key }) => {
+        const oldVal = (prospect as any)[key] ?? null;
+        const newVal = values[key] ?? null;
+        const oldStr = oldVal?.toString() || '';
+        const newStr = newVal?.toString() || '';
+        
+        if (oldStr !== newStr) {
+          changes.push({
+            field_name: key,
+            old_value: oldStr || null,
+            new_value: newStr || null,
+          });
+        }
+      });
+
+      // Update the prospect
       const { error } = await supabase
         .from('prospects')
         .update({
@@ -160,7 +204,27 @@ export function EditProspectDialog({
 
       if (error) throw error;
 
-      toast.success('Prospecto actualizado correctamente');
+      // Save change history
+      if (changes.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const historyRecords = changes.map(c => ({
+          prospect_id: prospect.id,
+          field_name: c.field_name,
+          old_value: c.old_value,
+          new_value: c.new_value,
+          changed_by: user?.id || null,
+        }));
+
+        const { error: historyError } = await supabase
+          .from('prospect_change_history')
+          .insert(historyRecords);
+
+        if (historyError) {
+          console.error('Error saving change history:', historyError);
+        }
+      }
+
+      toast.success(`Prospecto actualizado (${changes.length} campo${changes.length !== 1 ? 's' : ''} modificado${changes.length !== 1 ? 's' : ''})`);
       onOpenChange(false);
       onSuccess();
     } catch (error) {

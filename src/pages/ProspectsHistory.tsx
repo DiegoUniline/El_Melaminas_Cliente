@@ -187,10 +187,12 @@ export default function ProspectsHistory() {
               <Eye className="mr-2 h-4 w-4" />
               Ver detalles
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleEdit(p)}>
-              <Edit className="mr-2 h-4 w-4" />
-              Editar
-            </DropdownMenuItem>
+            {p.status === 'cancelled' && (
+              <DropdownMenuItem onClick={() => handleEdit(p)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Editar
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             {p.status === 'cancelled' && (
               <>
