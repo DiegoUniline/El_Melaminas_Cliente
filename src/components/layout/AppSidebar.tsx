@@ -10,7 +10,8 @@ import {
   Wifi,
   Tag,
   CalendarClock,
-  Receipt
+  Receipt,
+  MessageCircle
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -37,6 +38,7 @@ const mainNavItems = [
   { title: 'Mensualidades', icon: Receipt, href: '/mensualidades' },
   { title: 'Pagos', icon: CreditCard, href: '/payments' },
   { title: 'Agenda Servicios', icon: CalendarClock, href: '/services' },
+  { title: 'Chat Interno', icon: MessageCircle, href: '/chat' },
 ];
 
 const adminNavItems = [
