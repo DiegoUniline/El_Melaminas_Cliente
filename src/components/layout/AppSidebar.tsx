@@ -7,7 +7,8 @@ import {
   LogOut,
   Home,
   History,
-  Wifi
+  Wifi,
+  Tag
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,6 +36,7 @@ const mainNavItems = [
 ];
 
 const adminNavItems = [
+  { title: 'Catálogos', icon: Tag, href: '/catalogs' },
   { title: 'Reportes', icon: BarChart3, href: '/reports' },
   { title: 'Configuración', icon: Settings, href: '/settings' },
 ];
