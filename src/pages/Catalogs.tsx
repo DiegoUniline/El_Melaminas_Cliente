@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { 
   Plus, Edit, Power, PowerOff, DollarSign, Wifi, 
-  Loader2, Tag, Settings, CreditCard, Building, Users
+  Loader2, Tag, Settings, CreditCard, Building, Users, KeyRound
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -122,6 +122,12 @@ export default function Catalogs() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userForm, setUserForm] = useState({ full_name: '', email: '', password: '', role: 'employee' });
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+  
+  // ========== RESET PASSWORD STATE ==========
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [resetPasswordUser, setResetPasswordUser] = useState<{ user_id: string; full_name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // ========== FETCH DATA ==========
   const { data: charges = [], isLoading: loadingCharges } = useQuery({
@@ -474,6 +480,56 @@ export default function Catalogs() {
     }
   };
 
+  // ========== RESET PASSWORD HANDLER ==========
+  const handleOpenResetPassword = (user: any) => {
+    setResetPasswordUser({ user_id: user.user_id, full_name: user.full_name });
+    setNewPassword('');
+    setResetPasswordDialogOpen(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordUser || !newPassword) {
+      toast.error('Ingresa la nueva contraseña');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session?.access_token}`,
+        },
+        body: JSON.stringify({
+          user_id: resetPasswordUser.user_id,
+          new_password: newPassword,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al resetear contraseña');
+      }
+
+      toast.success('Contraseña actualizada correctamente');
+      setResetPasswordDialogOpen(false);
+    } catch (error: any) {
+      console.error('Error resetting password:', error);
+      toast.error(error.message || 'Error al resetear contraseña');
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   // Stats
   const activeCharges = charges.filter(c => c.is_active).length;
   const activePlans = plans.filter(p => p.is_active).length;
@@ -772,7 +828,11 @@ export default function Catalogs() {
                             </Badge>
                           </TableCell>
                           {isAdmin && (
-                            <TableCell className="text-right">
+                            <TableCell className="text-right space-x-2">
+                              <Button variant="outline" size="sm" onClick={() => handleOpenResetPassword(user)}>
+                                <KeyRound className="h-4 w-4 mr-1" />
+                                Contraseña
+                              </Button>
                               <Button variant="outline" size="sm" onClick={() => handleChangeUserRole(user.user_id, user.role)}>
                                 {user.role === 'admin' ? 'Hacer Empleado' : 'Hacer Admin'}
                               </Button>
@@ -882,6 +942,36 @@ export default function Catalogs() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setUserDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreateUser} disabled={isSubmittingUser}>{isSubmittingUser && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Crear Usuario</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resetear Contraseña</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Establece una nueva contraseña para <strong>{resetPasswordUser?.full_name}</strong>
+            </p>
+            <div className="space-y-2">
+              <Label>Nueva Contraseña *</Label>
+              <Input 
+                type="password" 
+                value={newPassword} 
+                onChange={(e) => setNewPassword(e.target.value)} 
+                placeholder="Mínimo 6 caracteres" 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleResetPassword} disabled={isResettingPassword}>
+              {isResettingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Guardar Contraseña
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
