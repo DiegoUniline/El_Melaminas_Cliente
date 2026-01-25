@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
@@ -18,19 +19,28 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, History } from 'lucide-react';
+import { Loader2, CheckCircle, History, DollarSign, Calculator } from 'lucide-react';
 import type { Prospect } from '@/types/database';
 import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { PhoneCountry, formatPhoneNumber } from '@/lib/phoneUtils';
+import { formatCurrency, calculateProration } from '@/lib/billing';
 
 const finalizeSchema = z.object({
+  // Personal data
   first_name: z.string().min(1, 'El nombre es requerido'),
   last_name_paterno: z.string().min(1, 'El apellido paterno es requerido'),
   last_name_materno: z.string().optional(),
@@ -40,15 +50,26 @@ const finalizeSchema = z.object({
   phone2_country: z.string().default('MX'),
   phone3_signer: z.string().optional(),
   phone3_country: z.string().default('MX'),
+  // Address
   street: z.string().min(1, 'La calle es requerida'),
   exterior_number: z.string().min(1, 'El número exterior es requerido'),
   interior_number: z.string().optional(),
   neighborhood: z.string().min(1, 'La colonia es requerida'),
   city: z.string().min(1, 'La ciudad es requerida'),
   postal_code: z.string().optional(),
+  // Technical
   ssid: z.string().optional(),
   antenna_ip: z.string().optional(),
   notes: z.string().optional(),
+  // Billing
+  plan_id: z.string().optional(),
+  monthly_fee: z.number().min(0, 'La mensualidad debe ser mayor o igual a 0'),
+  installation_date: z.string().min(1, 'La fecha de instalación es requerida'),
+  billing_day: z.number().min(1).max(28, 'El día de corte debe ser entre 1 y 28'),
+  installation_cost: z.number().min(0),
+  prorated_amount: z.number().min(0),
+  additional_charges: z.number().min(0).optional(),
+  additional_charges_notes: z.string().optional(),
 });
 
 type FinalizeFormValues = z.infer<typeof finalizeSchema>;
@@ -69,6 +90,20 @@ export function FinalizeProspectDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
   const { user } = useAuth();
+
+  // Fetch service plans
+  const { data: servicePlans = [] } = useQuery({
+    queryKey: ['service_plans'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('service_plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('monthly_fee');
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const form = useForm<FinalizeFormValues>({
     resolver: zodResolver(finalizeSchema),
@@ -91,6 +126,14 @@ export function FinalizeProspectDialog({
       ssid: '',
       antenna_ip: '',
       notes: '',
+      plan_id: '',
+      monthly_fee: 0,
+      installation_date: new Date().toISOString().split('T')[0],
+      billing_day: 10,
+      installation_cost: 0,
+      prorated_amount: 0,
+      additional_charges: undefined,
+      additional_charges_notes: '',
     },
   });
 
@@ -116,10 +159,41 @@ export function FinalizeProspectDialog({
         ssid: prospect.ssid || '',
         antenna_ip: prospect.antenna_ip || '',
         notes: prospect.notes || '',
+        // Billing defaults
+        plan_id: '',
+        monthly_fee: 0,
+        installation_date: new Date().toISOString().split('T')[0],
+        billing_day: 10,
+        installation_cost: 0,
+        prorated_amount: 0,
+        additional_charges: undefined,
+        additional_charges_notes: '',
       });
       setActiveTab('personal');
     }
   }, [prospect, open, form]);
+
+  // Handle plan selection
+  const handlePlanChange = (planId: string) => {
+    form.setValue('plan_id', planId);
+    const plan = servicePlans.find(p => p.id === planId);
+    if (plan) {
+      form.setValue('monthly_fee', plan.monthly_fee);
+      calculateProrationAmount();
+    }
+  };
+
+  // Calculate proration
+  const calculateProrationAmount = () => {
+    const installDate = form.getValues('installation_date');
+    const billingDay = form.getValues('billing_day');
+    const monthlyFee = form.getValues('monthly_fee');
+    
+    if (installDate && billingDay && monthlyFee > 0) {
+      const { proratedAmount } = calculateProration(new Date(installDate), billingDay, monthlyFee);
+      form.setValue('prorated_amount', proratedAmount);
+    }
+  };
 
   if (!prospect) return null;
 
@@ -262,27 +336,78 @@ export function FinalizeProspectDialog({
           console.error('Error creating equipment:', equipmentError);
         }
 
-        // 5. Create billing record with default values
-        const today = new Date();
-        const defaultBillingDay = 10;
-        const firstBillingDate = new Date(today.getFullYear(), today.getMonth() + 1, defaultBillingDay);
+        // 5. Calculate billing values
+        const installDate = new Date(data.installation_date);
+        const { firstBillingDate } = calculateProration(installDate, data.billing_day, data.monthly_fee);
         
+        // Calculate total initial balance
+        const totalInitialBalance = 
+          (data.installation_cost || 0) + 
+          (data.prorated_amount || 0) + 
+          (data.additional_charges || 0);
+
+        // Create billing record with real values
         const { error: billingError } = await supabase
           .from('client_billing')
           .insert({
             client_id: clientData.id,
-            monthly_fee: 0,
-            installation_cost: 0,
-            installation_date: today.toISOString().split('T')[0],
+            plan_id: data.plan_id || null,
+            monthly_fee: data.monthly_fee,
+            installation_cost: data.installation_cost,
+            installation_date: data.installation_date,
             first_billing_date: firstBillingDate.toISOString().split('T')[0],
-            billing_day: defaultBillingDay,
-            prorated_amount: 0,
-            additional_charges: 0,
-            balance: 0,
+            billing_day: data.billing_day,
+            prorated_amount: data.prorated_amount,
+            additional_charges: data.additional_charges || 0,
+            additional_charges_notes: data.additional_charges_notes || null,
+            balance: totalInitialBalance,
           });
 
         if (billingError) {
           console.error('Error creating billing:', billingError);
+        }
+
+        // 6. Create initial charges in client_charges
+        const chargesToCreate = [];
+
+        if (data.installation_cost > 0) {
+          chargesToCreate.push({
+            client_id: clientData.id,
+            description: 'Costo de instalación',
+            amount: data.installation_cost,
+            status: 'pending',
+            created_by: user?.id,
+          });
+        }
+
+        if (data.prorated_amount > 0) {
+          chargesToCreate.push({
+            client_id: clientData.id,
+            description: 'Prorrateo inicial',
+            amount: data.prorated_amount,
+            status: 'pending',
+            created_by: user?.id,
+          });
+        }
+
+        if (data.additional_charges && data.additional_charges > 0) {
+          chargesToCreate.push({
+            client_id: clientData.id,
+            description: data.additional_charges_notes || 'Cargos adicionales',
+            amount: data.additional_charges,
+            status: 'pending',
+            created_by: user?.id,
+          });
+        }
+
+        if (chargesToCreate.length > 0) {
+          const { error: chargesError } = await supabase
+            .from('client_charges')
+            .insert(chargesToCreate);
+
+          if (chargesError) {
+            console.error('Error creating charges:', chargesError);
+          }
         }
       }
 
@@ -324,10 +449,14 @@ export function FinalizeProspectDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFinalize)} className="space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="personal">Datos Personales</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="personal">Personal</TabsTrigger>
                 <TabsTrigger value="address">Dirección</TabsTrigger>
                 <TabsTrigger value="technical">Técnico</TabsTrigger>
+                <TabsTrigger value="billing" className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" />
+                  Facturación
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="personal" className="space-y-4 pt-4">
@@ -567,6 +696,225 @@ export function FinalizeProspectDialog({
                     </FormItem>
                   )}
                 />
+              </TabsContent>
+
+              {/* Billing Tab */}
+              <TabsContent value="billing" className="space-y-4 pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="plan_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Plan de Servicio</FormLabel>
+                        <Select value={field.value} onValueChange={handlePlanChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleccionar plan" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {servicePlans.map((plan) => (
+                              <SelectItem key={plan.id} value={plan.id}>
+                                {plan.name} - {formatCurrency(plan.monthly_fee)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="monthly_fee"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Mensualidad *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(parseFloat(e.target.value) || 0);
+                              setTimeout(calculateProrationAmount, 0);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="installation_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fecha de Instalación *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(e.target.value);
+                              setTimeout(calculateProrationAmount, 0);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="billing_day"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Día de Corte *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="28"
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(parseInt(e.target.value) || 10);
+                              setTimeout(calculateProrationAmount, 0);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="installation_cost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Costo de Instalación</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            {...field}
+                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="prorated_amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1">
+                          Prorrateo
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={calculateProrationAmount}
+                            title="Calcular prorrateo"
+                          >
+                            <Calculator className="h-3 w-3" />
+                          </Button>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            {...field}
+                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="additional_charges"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Cargos Adicionales</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={field.value || ''}
+                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="additional_charges_notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notas de Cargos Adicionales</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={2}
+                          placeholder="Describe los cargos adicionales..."
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="bg-muted/50 rounded-lg p-4">
+                  <p className="text-sm font-medium mb-2">Resumen de Cargos Iniciales:</p>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Instalación:</span>
+                      <span className="ml-2 font-medium">{formatCurrency(form.watch('installation_cost') || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Prorrateo:</span>
+                      <span className="ml-2 font-medium">{formatCurrency(form.watch('prorated_amount') || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Adicionales:</span>
+                      <span className="ml-2 font-medium">{formatCurrency(form.watch('additional_charges') || 0)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <span className="text-muted-foreground">Total Saldo Inicial:</span>
+                    <span className="ml-2 font-bold text-primary">
+                      {formatCurrency(
+                        (form.watch('installation_cost') || 0) + 
+                        (form.watch('prorated_amount') || 0) + 
+                        (form.watch('additional_charges') || 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
               </TabsContent>
             </Tabs>
 

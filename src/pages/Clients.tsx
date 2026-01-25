@@ -17,7 +17,7 @@ import { exportToExcel } from '@/lib/exportToExcel';
 import { formatCurrency } from '@/lib/billing';
 import { useAuth } from '@/hooks/useAuth';
 import { 
-  Plus, Download, Eye, Edit, CreditCard, XCircle, Users, 
+  Plus, Download, Eye, CreditCard, XCircle, Users, 
   Wifi, Calendar, DollarSign, AlertTriangle, UserX, Clock,
   CheckCircle2, Ban
 } from 'lucide-react';
@@ -262,9 +262,6 @@ export default function Clients() {
           </Button>
           {isAdmin && (
             <>
-              <Button variant="ghost" size="icon" onClick={() => handleEdit(client)} title="Editar">
-                <Edit className="h-4 w-4" />
-              </Button>
               <Button variant="ghost" size="icon" onClick={() => handlePayment(client)} title="Registrar pago">
                 <CreditCard className="h-4 w-4 text-green-600" />
               </Button>

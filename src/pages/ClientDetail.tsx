@@ -62,6 +62,7 @@ import { ChangeBillingDayDialog } from '@/components/clients/ChangeBillingDayDia
 import { ChangeEquipmentDialog } from '@/components/clients/ChangeEquipmentDialog';
 import { RelocationDialog } from '@/components/clients/RelocationDialog';
 import { PaymentFormDialog } from '@/components/payments/PaymentFormDialog';
+import { InitialBillingDialog } from '@/components/clients/InitialBillingDialog';
 import type { Client, ClientBilling, Equipment, Payment } from '@/types/database';
 
 type ClientWithDetails = Client & {
@@ -129,6 +130,7 @@ export default function ClientDetail() {
   const [changeEquipmentOpen, setChangeEquipmentOpen] = useState(false);
   const [relocationOpen, setRelocationOpen] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showInitialBillingDialog, setShowInitialBillingDialog] = useState(false);
   
   // Note states
   const [newNote, setNewNote] = useState('');
@@ -962,6 +964,18 @@ export default function ClientDetail() {
                       <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
                         <Edit className="h-4 w-4 mr-1" />
                         Editar
+                      </Button>
+                    )}
+                    {/* Show initial billing button if not configured */}
+                    {isAdmin && billing && billing.monthly_fee === 0 && billing.installation_cost === 0 && billing.prorated_amount === 0 && (
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={() => setShowInitialBillingDialog(true)}
+                        className="bg-amber-500 hover:bg-amber-600"
+                      >
+                        <DollarSign className="h-4 w-4 mr-1" />
+                        Configurar Cargos Iniciales
                       </Button>
                     )}
                   </div>
@@ -1952,6 +1966,19 @@ export default function ClientDetail() {
             queryClient.invalidateQueries({ queryKey: ['payments', clientId] });
             queryClient.invalidateQueries({ queryKey: ['client_billing', clientId] });
             refetchBilling();
+          }}
+        />
+
+        <InitialBillingDialog
+          client={client}
+          billing={billing}
+          open={showInitialBillingDialog}
+          onOpenChange={setShowInitialBillingDialog}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['client_billing', clientId] });
+            queryClient.invalidateQueries({ queryKey: ['client_charges', clientId] });
+            refetchBilling();
+            refetchCharges();
           }}
         />
       </div>
