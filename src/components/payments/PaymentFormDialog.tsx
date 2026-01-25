@@ -41,7 +41,7 @@ type ClientWithBilling = Client & {
 };
 
 const paymentSchema = z.object({
-  amount: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
+  amount: z.number().min(0, 'El monto debe ser mayor o igual a 0').optional(),
   payment_type: z.string().optional(),
   bank_type: z.string().optional(),
   payment_date: z.string().min(1, 'La fecha es requerida'),
@@ -118,7 +118,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
   const form = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
-      amount: client?.client_billing?.monthly_fee || 0,
+      amount: client?.client_billing?.monthly_fee || undefined,
       payment_type: '',
       bank_type: '',
       payment_date: currentDate.toISOString().split('T')[0],
@@ -433,9 +433,12 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
                     <FormLabel>Monto en efectivo/transferencia {!useCreditBalance && '*'}</FormLabel>
                     <FormControl>
                       <Input
-                        {...field}
                         type="number"
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          field.onChange(val === '' ? undefined : parseFloat(val));
+                        }}
                       />
                     </FormControl>
                     {useCreditBalance && creditAmountToUse > 0 && (
