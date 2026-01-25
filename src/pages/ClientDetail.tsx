@@ -232,7 +232,7 @@ export default function ClientDetail() {
     description: '',
     scheduled_date: format(new Date(), 'yyyy-MM-dd'),
     scheduled_time: '09:00',
-    charge_amount: 0,
+    charge_amount: '',
     assigned_to: '',
   });
   const [editingService, setEditingService] = useState<any>(null);

@@ -101,7 +101,7 @@ export default function Services() {
     scheduled_date: format(new Date(), 'yyyy-MM-dd'),
     scheduled_time: '09:00',
     estimated_duration: 60,
-    charge_amount: 0,
+    charge_amount: '',
   });
 
   // Fetch services
@@ -200,7 +200,7 @@ export default function Services() {
         scheduled_date: data.scheduled_date,
         scheduled_time: data.scheduled_time || null,
         estimated_duration: data.estimated_duration,
-        charge_amount: data.charge_amount,
+        charge_amount: data.charge_amount ? parseFloat(data.charge_amount) : null,
         created_by: user?.id,
       };
       
@@ -265,7 +265,7 @@ export default function Services() {
       scheduled_date: format(new Date(), 'yyyy-MM-dd'),
       scheduled_time: '09:00',
       estimated_duration: 60,
-      charge_amount: 0,
+      charge_amount: '',
     });
   };
 
@@ -625,7 +625,7 @@ export default function Services() {
                 <Input
                   type="number"
                   value={formData.charge_amount}
-                  onChange={(e) => setFormData({ ...formData, charge_amount: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, charge_amount: e.target.value })}
                   placeholder="0 si no aplica"
                 />
               </div>

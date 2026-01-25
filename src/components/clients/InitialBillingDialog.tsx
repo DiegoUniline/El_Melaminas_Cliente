@@ -84,11 +84,11 @@ export function InitialBillingDialog({
     resolver: zodResolver(billingSchema),
     defaultValues: {
       plan_id: '',
-      monthly_fee: 0,
+      monthly_fee: undefined,
       installation_date: new Date().toISOString().split('T')[0],
       billing_day: 10,
-      installation_cost: 0,
-      prorated_amount: 0,
+      installation_cost: undefined,
+      prorated_amount: undefined,
       additional_charges: undefined,
       additional_charges_notes: '',
     },
@@ -271,10 +271,11 @@ export function InitialBillingDialog({
                         type="number"
                         min="0"
                         step="0.01"
-                        {...field}
+                        value={field.value ?? ''}
                         onChange={(e) => {
-                          field.onChange(parseFloat(e.target.value) || 0);
-                          setTimeout(calculateProration, 0);
+                          const val = e.target.value;
+                          field.onChange(val === '' ? undefined : parseFloat(val));
+                          setTimeout(calculateProrationAmount, 0);
                         }}
                       />
                     </FormControl>
@@ -342,8 +343,11 @@ export function InitialBillingDialog({
                         type="number"
                         min="0"
                         step="0.01"
-                        {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        value={field.value ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          field.onChange(val === '' ? undefined : parseFloat(val));
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
