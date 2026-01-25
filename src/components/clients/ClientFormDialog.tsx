@@ -30,6 +30,7 @@ import { calculateProration, formatCurrency, calculateInitialBalance } from '@/l
 import type { Client, ClientBilling, Equipment } from '@/types/database';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { PhoneCountry } from '@/lib/phoneUtils';
+import { MacAddressInput } from '@/components/shared/MacAddressInput';
 
 type ClientWithDetails = Client & {
   client_billing: ClientBilling | null;
@@ -209,7 +210,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
         installation_cost: billing?.installation_cost || 0,
         installation_date: billing?.installation_date || new Date().toISOString().split('T')[0],
         billing_day: (billing as any)?.billing_day || 10,
-        additional_charges: (billing as any)?.additional_charges || 0,
+        additional_charges: (billing as any)?.additional_charges || undefined,
         additional_charges_notes: (billing as any)?.additional_charges_notes || '',
         router_brand: equipment?.router_brand || '',
         router_model: equipment?.router_model || '',
@@ -777,8 +778,11 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                           <FormItem>
                             <FormLabel>Fecha de Instalación *</FormLabel>
                             <FormControl>
-                              <Input {...field} type="date" />
+                              <Input {...field} type="date" disabled={!!client} />
                             </FormControl>
+                            {client && (
+                              <FormDescription className="text-xs">Solo lectura en edición</FormDescription>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -793,9 +797,13 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                               <Input
                                 {...field}
                                 type="number"
+                                disabled={!!client}
                                 onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                               />
                             </FormControl>
+                            {client && (
+                              <FormDescription className="text-xs">Solo lectura en edición</FormDescription>
+                            )}
                             <FormMessage />
                           </FormItem>
                         )}
@@ -807,14 +815,22 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                       name="additional_charges"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Cargos Adicionales</FormLabel>
+                          <FormLabel>Cargos Adicionales Iniciales</FormLabel>
                           <FormControl>
                             <Input
                               {...field}
                               type="number"
-                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              disabled={!!client}
+                              value={field.value ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val === '' ? undefined : parseFloat(val));
+                              }}
                             />
                           </FormControl>
+                          {client && (
+                            <FormDescription className="text-xs">Solo lectura en edición. Usa "Agregar Cargo Extra" en el detalle del cliente.</FormDescription>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -827,7 +843,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                         <FormItem>
                           <FormLabel>Notas de Cargos Adicionales</FormLabel>
                           <FormControl>
-                            <Textarea {...field} rows={2} placeholder="Ej: Cable extra, soporte especial..." />
+                            <Textarea {...field} rows={2} placeholder="Ej: Cable extra, soporte especial..." disabled={!!client} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -925,7 +941,10 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                           <FormItem>
                             <FormLabel>MAC</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="AA:BB:CC:DD:EE:FF" />
+                              <MacAddressInput
+                                value={field.value || ''}
+                                onChange={field.onChange}
+                              />
                             </FormControl>
                           </FormItem>
                         )}
@@ -1015,7 +1034,10 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                           <FormItem>
                             <FormLabel>MAC</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="AA:BB:CC:DD:EE:FF" />
+                              <MacAddressInput
+                                value={field.value || ''}
+                                onChange={field.onChange}
+                              />
                             </FormControl>
                           </FormItem>
                         )}

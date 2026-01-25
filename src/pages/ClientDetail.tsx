@@ -56,6 +56,7 @@ import {
 import { formatCurrency } from '@/lib/billing';
 import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry } from '@/lib/phoneUtils';
 import { PhoneInput } from '@/components/shared/PhoneInput';
+import { MacAddressInput } from '@/components/shared/MacAddressInput';
 import { ChangePlanDialog } from '@/components/clients/ChangePlanDialog';
 import { ChangeBillingDayDialog } from '@/components/clients/ChangeBillingDayDialog';
 import { ChangeEquipmentDialog } from '@/components/clients/ChangeEquipmentDialog';
@@ -148,6 +149,12 @@ export default function ClientDetail() {
   const [chargeToDelete, setChargeToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingMensualidades, setIsGeneratingMensualidades] = useState(false);
+  
+  // Extra charges form states
+  const [isAddingExtraCharge, setIsAddingExtraCharge] = useState(false);
+  const [selectedChargeType, setSelectedChargeType] = useState('');
+  const [extraChargeAmount, setExtraChargeAmount] = useState('');
+  const [extraChargeDescription, setExtraChargeDescription] = useState('');
   
   // Service states
   const [isAddingService, setIsAddingService] = useState(false);
@@ -309,6 +316,20 @@ export default function ClientDetail() {
     },
   });
 
+  // Fetch charge catalog
+  const { data: chargeCatalog = [] } = useQuery({
+    queryKey: ['charge_catalog'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('charge_catalog')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const getPaymentMethodName = (paymentTypeId: string) => {
     const method = paymentMethods.find(pm => pm.id === paymentTypeId);
     return method?.name || paymentTypeId;
@@ -429,6 +450,65 @@ export default function ClientDetail() {
       return true;
     });
   }, [mensualidades, mensualidadFilter, mensualidadYearFilter]);
+
+  // Handle adding extra charge
+  const handleAddExtraCharge = async () => {
+    if (!clientId || !extraChargeAmount) {
+      toast.error('Ingresa un monto para el cargo');
+      return;
+    }
+
+    setIsAddingExtraCharge(true);
+    try {
+      const selectedCatalog = chargeCatalog.find((c: any) => c.id === selectedChargeType);
+      const description = extraChargeDescription || selectedCatalog?.name || 'Cargo adicional';
+      const amount = parseFloat(extraChargeAmount);
+
+      // Create the charge
+      const { error: chargeError } = await supabase
+        .from('client_charges')
+        .insert({
+          client_id: clientId,
+          description,
+          amount,
+          status: 'pending',
+          created_by: user?.id,
+          charge_catalog_id: selectedChargeType || null,
+        });
+
+      if (chargeError) throw chargeError;
+
+      // Update client balance
+      const newBalance = (billing?.balance || 0) + amount;
+      const { error: balanceError } = await supabase
+        .from('client_billing')
+        .update({ balance: newBalance })
+        .eq('client_id', clientId);
+
+      if (balanceError) throw balanceError;
+
+      toast.success('Cargo agregado correctamente');
+      setSelectedChargeType('');
+      setExtraChargeAmount('');
+      setExtraChargeDescription('');
+      refetchCharges();
+      refetchBilling();
+    } catch (error: any) {
+      console.error('Error adding charge:', error);
+      toast.error('Error al agregar el cargo');
+    } finally {
+      setIsAddingExtraCharge(false);
+    }
+  };
+
+  const handleSelectChargeType = (chargeId: string) => {
+    setSelectedChargeType(chargeId);
+    const catalog = chargeCatalog.find((c: any) => c.id === chargeId);
+    if (catalog) {
+      setExtraChargeAmount(catalog.default_amount.toString());
+      setExtraChargeDescription(catalog.name);
+    }
+  };
 
   // Handlers
   const handleCancelEdit = () => {
@@ -1045,9 +1125,9 @@ export default function ClientDetail() {
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">MAC</Label>
-                          <Input
+                          <MacAddressInput
                             value={editedEquipment.antenna_mac || ''}
-                            onChange={(e) => setEditedEquipment({ ...editedEquipment, antenna_mac: e.target.value })}
+                            onChange={(v) => setEditedEquipment({ ...editedEquipment, antenna_mac: v })}
                           />
                         </div>
                       </div>
@@ -1160,6 +1240,13 @@ export default function ClientDetail() {
                           />
                         </div>
                       </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">MAC</Label>
+                        <MacAddressInput
+                          value={editedEquipment.router_mac || ''}
+                          onChange={(v) => setEditedEquipment({ ...editedEquipment, router_mac: v })}
+                        />
+                      </div>
                     </div>
                   ) : equipment ? (
                     <div className="space-y-3 text-sm">
@@ -1174,6 +1261,16 @@ export default function ClientDetail() {
                         </div>
                       </div>
                       <Separator />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-muted-foreground">IP</p>
+                          <p className="font-mono">{equipment.router_ip || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">MAC</p>
+                          <p className="font-mono text-xs">{equipment.router_mac || '-'}</p>
+                        </div>
+                      </div>
                       <div className="bg-primary/5 p-3 rounded-lg">
                         <p className="text-muted-foreground text-xs">Red WiFi</p>
                         <p className="font-bold">{equipment.router_network_name || '-'}</p>
@@ -1359,6 +1456,64 @@ export default function ClientDetail() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Add Extra Charge Form */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Agregar Cargo Extra
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-4 gap-3 items-end">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tipo de Cargo</Label>
+                    <Select value={selectedChargeType} onValueChange={handleSelectChargeType}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar tipo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {chargeCatalog.map((item: any) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} ({formatCurrency(item.default_amount)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Descripción</Label>
+                    <Input
+                      placeholder="Descripción del cargo"
+                      value={extraChargeDescription}
+                      onChange={(e) => setExtraChargeDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Monto</Label>
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={extraChargeAmount}
+                      onChange={(e) => setExtraChargeAmount(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    onClick={handleAddExtraCharge} 
+                    disabled={isAddingExtraCharge || !extraChargeAmount}
+                  >
+                    {isAddingExtraCharge ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    Agregar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Pending charges */}
             {pendingCharges.length > 0 && (
               <Card className="border-amber-200 bg-amber-50/50">
