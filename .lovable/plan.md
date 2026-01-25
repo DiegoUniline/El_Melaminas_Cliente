@@ -1,154 +1,217 @@
 
-# Plan: Corregir Campo de Costo de Instalación y Prevenir Guardado Accidental
+# Plan: Eliminar Campo de Periodo y Mejorar Visualización de Mensualidades Cubiertas
 
-## Problemas Identificados
+## Problema Identificado
 
-### 1. Campo "Costo de Instalación" con 0 inicial
-**Ubicación**: `src/components/prospects/FinalizeProspectDialog.tsx`
-- Línea 159: `installation_cost: 0` como valor por defecto
-- Línea 191: Se resetea a `0` cuando se carga el prospecto
-- Líneas 889-895: El input muestra "0" porque el valor es 0
+El usuario describe correctamente el flujo:
+- Si el saldo es $1,000 y la mensualidad es $300, al pagar $1,600:
+  - $1,000 van a cubrir el saldo pendiente
+  - $600 restantes cubren 2 mensualidades futuras ($600 / $300 = 2 meses)
+  - Estas mensualidades deben pre-registrarse como pagadas en el historial
 
-**Problema**: El usuario ve "0" en el campo en lugar de un campo vacío.
+**Estado Actual:**
+- El sistema YA tiene la lógica de crear mensualidades adelantadas (líneas 252-296 de `PaymentFormDialog.tsx`)
+- PERO el formulario pide "Periodo de Pago" (mes/año) manualmente, lo cual es redundante
+- El periodo se guarda en la tabla `payments` pero las mensualidades cubiertas están en `client_charges`
 
-### 2. Formulario se guarda automáticamente
-**Ubicación**: `src/components/prospects/FinalizeProspectDialog.tsx`
-- Línea 525: `<form onSubmit={form.handleSubmit(handleFinalize)}>`
-- Línea 1144: El botón "Siguiente" tiene `type="button"` (correcto)
-- **Problema**: Si el usuario presiona Enter en cualquier campo de texto (Input), el formulario se envía automáticamente porque es el comportamiento por defecto de HTML forms.
+**Problema UX:**
+- No tiene sentido pedir periodo ya que el sistema calcula automáticamente qué cargos se cubren
+- Las mensualidades adelantadas ya se crean correctamente en `client_charges`
+- El campo de periodo confunde porque el pago puede cubrir múltiples periodos
 
 ---
 
 ## Solución Propuesta
 
-### Parte 1: Eliminar 0 Inicial de Campos Numéricos
+### Parte 1: Eliminar Campos de Periodo del Formulario de Pagos
 
-**Cambios en defaultValues y reset:**
+**Archivo**: `src/components/payments/PaymentFormDialog.tsx`
+
+1. **Eliminar del schema:**
 ```typescript
-// Línea 159 - Cambiar de 0 a undefined
-installation_cost: undefined,
-prorated_amount: undefined,
-monthly_fee: undefined,
-
-// Línea 191 - Cambiar reset a undefined
-installation_cost: undefined,
-prorated_amount: undefined,
-monthly_fee: 0, // Este sí debe mostrar 0 si no hay plan
+// Eliminar estas líneas
+period_month: z.number().min(1).max(12).optional(),
+period_year: z.number().min(2020).optional(),
 ```
 
-**Cambios en los inputs numéricos:**
-Los inputs de tipo `number` con valor `undefined` mostrarán el campo vacío en lugar de "0".
-
-Modificar el onChange de los inputs para manejar valores vacíos:
+2. **Eliminar de defaultValues:**
 ```typescript
-// Líneas 893-894 - Para installation_cost
-onChange={(e) => {
-  const value = e.target.value;
-  field.onChange(value === '' ? undefined : parseFloat(value));
-}}
-value={field.value ?? ''}  // Mostrar vacío si es undefined o 0
+// Eliminar
+period_month: currentMonth,
+period_year: currentYear,
 ```
 
-### Parte 2: Prevenir Submit Accidental con Enter
+3. **Eliminar los campos del formulario (líneas 513-568):**
+   - Eliminar el `<div className="grid grid-cols-2 gap-4">` que contiene "Mes del Periodo" y "Año del Periodo"
 
-**Opción A - Prevenir Enter en el form (RECOMENDADA):**
+4. **Actualizar el insert de payments (línea 190-191):**
 ```typescript
-// En el form, línea 525
-<form 
-  onSubmit={form.handleSubmit(handleFinalize)} 
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-      e.preventDefault();
-    }
-  }}
-  className="space-y-4"
->
+// Eliminar estas líneas
+period_month: data.period_month || null,
+period_year: data.period_year || null,
 ```
 
-Esta solución previene que al presionar Enter en cualquier Input se envíe el formulario. Solo el botón "Finalizar y Crear Cliente" podrá enviar el form.
-
----
-
-## Cambios Específicos
-
-### Archivo: `src/components/prospects/FinalizeProspectDialog.tsx`
-
-#### 1. Modificar defaultValues (líneas 156-161)
+5. **Eliminar constantes no usadas:**
 ```typescript
-defaultValues: {
-  // ... otros campos ...
-  monthly_fee: undefined,        // era 0
-  installation_cost: undefined,  // era 0
-  prorated_amount: undefined,    // era 0
+// Eliminar MONTHS array (líneas 67-80)
+// Eliminar currentMonth y currentYear si ya no se usan
+```
+
+### Parte 2: Mostrar Resumen de Aplicación en Toast
+
+Cuando se registra un pago, mostrar un resumen claro de a qué se aplicó:
+
+```typescript
+// Después de procesar el pago, construir mensaje informativo
+let summaryMessage = 'Pago registrado. ';
+const paidCharges = chargesPaidCount;
+const advanceMonths = monthsToCover;
+
+if (paidCharges > 0) {
+  summaryMessage += `${paidCharges} cargo(s) cubierto(s). `;
 }
+if (advanceMonths > 0) {
+  summaryMessage += `${advanceMonths} mensualidad(es) adelantada(s). `;
+}
+if (newBalance < 0) {
+  summaryMessage += `Saldo a favor: ${formatCurrency(Math.abs(newBalance))}`;
+}
+
+toast.success(summaryMessage);
 ```
 
-#### 2. Modificar reset en useEffect (líneas 186-193)
+### Parte 3: Actualizar Vista de Pagos
+
+**Archivo**: `src/pages/Payments.tsx`
+
+1. **Eliminar columna de Periodo de la tabla:**
 ```typescript
-// Billing defaults
-plan_id: '',
-monthly_fee: undefined,          // era 0
-installation_cost: undefined,    // era 0  
-prorated_amount: undefined,      // era 0
+// Eliminar en columna 'client' las líneas 103-107
+{payment.period_month && payment.period_year && (
+  <p className="text-sm text-muted-foreground">
+    Periodo: {payment.period_month}/{payment.period_year}
+  </p>
+)}
 ```
 
-#### 3. Modificar input de Costo de Instalación (líneas 889-895)
+2. **Actualizar exportación Excel (línea 74):**
 ```typescript
-<Input
-  type="number"
-  min="0"
-  step="0.01"
-  value={field.value ?? ''}
-  onChange={(e) => {
-    const value = e.target.value;
-    field.onChange(value === '' ? undefined : parseFloat(value));
-  }}
-/>
+// Eliminar línea
+'Periodo': payment.period_month && payment.period_year ? `${payment.period_month}/${payment.period_year}` : '',
 ```
 
-#### 4. Aplicar mismo patrón a otros inputs numéricos
-- Mensualidad (líneas 818-826)
-- Prorrateo (líneas 921-926)
+3. **Agregar columna "Cargos Cubiertos":** (Opcional pero útil)
+   - Mostrar cuántos cargos (`client_charges`) están asociados a este `payment_id`
 
-#### 5. Prevenir submit con Enter (línea 525)
+### Parte 4: Actualizar Detalle de Pago
+
+**Archivo**: `src/components/payments/PaymentDetailDialog.tsx`
+
+1. **Eliminar sección de Periodo (líneas 74-84):**
 ```typescript
-<form 
-  onSubmit={form.handleSubmit(handleFinalize)} 
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-      e.preventDefault();
-    }
-  }}
-  className="space-y-4"
->
+// Eliminar este bloque
+{payment.period_month && payment.period_year && (
+  <div className="flex items-start gap-3">
+    <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
+    <div>
+      <p className="text-sm text-muted-foreground">Periodo</p>
+      <p className="font-medium">
+        {payment.period_month}/{payment.period_year}
+      </p>
+    </div>
+  </div>
+)}
 ```
 
-#### 6. Actualizar cálculos para manejar undefined
-```typescript
-// En totalInitialBalance (líneas 269-272)
-const totalInitialBalance = 
-  (form.watch('installation_cost') || 0) + 
-  (form.watch('prorated_amount') || 0) + 
-  totalAdditionalCharges;
-// Esto ya maneja undefined correctamente con || 0
-```
+2. **Agregar sección "Cargos Cubiertos":** 
+   - Hacer query de `client_charges` donde `payment_id = payment.id`
+   - Mostrar lista de cargos que fueron pagados con este pago
+   - Esto da visibilidad clara de a qué se aplicó el pago
 
 ---
 
-## Resultado Esperado
+## Archivos a Modificar
 
-1. **Campo Costo de Instalación**: Aparecerá vacío inicialmente, sin "0"
-2. **Campo Prorrateo**: Aparecerá vacío inicialmente, sin "0"  
-3. **Guardado accidental**: Presionar Enter en cualquier campo NO enviará el formulario
-4. **Solo el botón "Finalizar y Crear Cliente"** podrá guardar el cliente
-5. **Los cálculos seguirán funcionando** correctamente tratando undefined como 0
+| Archivo | Cambios |
+|---------|---------|
+| `src/components/payments/PaymentFormDialog.tsx` | Eliminar campos de periodo, actualizar insert |
+| `src/pages/Payments.tsx` | Eliminar referencia a periodo en tabla y export |
+| `src/components/payments/PaymentDetailDialog.tsx` | Eliminar periodo, agregar lista de cargos cubiertos |
 
 ---
 
-## Flujo de Usuario Corregido
+## Flujo de Usuario Final
 
-1. Usuario abre el modal de conversión
-2. Los campos de costo están vacíos (no "0")
-3. Usuario navega con "Siguiente" entre tabs
-4. Si presiona Enter en cualquier campo, NO se guarda
-5. Solo al hacer clic en "Finalizar y Crear Cliente" en el tab Resumen se guarda
+### Al Registrar Pago:
+1. Usuario ingresa monto ($1,600)
+2. Usuario selecciona tipo de pago y fecha
+3. Usuario hace clic en "Registrar Pago"
+4. **Sistema procesa automáticamente:**
+   - Paga cargos pendientes del más antiguo al más nuevo
+   - Si hay excedente, crea mensualidades adelantadas marcadas como pagadas
+   - Si queda sobrante (no alcanza para otra mensualidad), queda como saldo a favor
+5. **Toast muestra:** "Pago registrado. 3 cargo(s) cubierto(s). 2 mensualidad(es) adelantada(s)."
+
+### Al Ver Detalle de Pago:
+1. Muestra monto, fecha, tipo, banco
+2. **Nueva sección "Cargos Cubiertos":**
+   - Costo de instalación - $1,000
+   - Mensualidad adelantada 2/2026 - $300
+   - Mensualidad adelantada 3/2026 - $300
+
+### Historial de Mensualidades (client_charges):
+El usuario verá en el historial del cliente:
+- Mensualidad 2/2026 - Pagada (vinculada al pago)
+- Mensualidad 3/2026 - Pagada (vinculada al pago)
+
+---
+
+## Beneficios
+
+1. **Simplicidad**: No se pide información redundante al operador
+2. **Precisión**: El sistema calcula exactamente qué se cubre
+3. **Trazabilidad**: Cada cargo sabe qué pago lo cubrió
+4. **Flexibilidad**: El pago puede cubrir múltiples tipos de cargos (instalación + prorrateo + mensualidades)
+5. **Visibilidad**: El detalle del pago muestra exactamente a qué se aplicó
+
+---
+
+## Sección Técnica
+
+### Schema después de cambios:
+```typescript
+const paymentSchema = z.object({
+  amount: z.number().min(0),
+  payment_type: z.string().optional(),
+  bank_type: z.string().optional(),
+  payment_date: z.string().min(1),
+  // ELIMINADO: period_month, period_year
+  receipt_number: z.string().optional(),
+  payer_name: z.string().optional(),
+  payer_phone: z.string().optional(),
+  notes: z.string().optional(),
+  use_credit_balance: z.boolean().optional(),
+  credit_amount_to_use: z.number().optional(),
+});
+```
+
+### Query para cargos cubiertos en PaymentDetailDialog:
+```typescript
+const { data: coveredCharges } = useQuery({
+  queryKey: ['payment_charges', payment?.id],
+  queryFn: async () => {
+    if (!payment) return [];
+    const { data, error } = await supabase
+      .from('client_charges')
+      .select('id, description, amount, paid_date')
+      .eq('payment_id', payment.id)
+      .order('created_at');
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!payment,
+});
+```
+
+### Nota sobre datos existentes:
+Los pagos existentes que tienen `period_month` y `period_year` seguirán guardados en la base de datos. Simplemente no se mostrarán ni se pedirán en nuevos registros. La información real de qué cargos se cubrieron está en `client_charges.payment_id`.
