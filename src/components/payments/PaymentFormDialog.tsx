@@ -387,6 +387,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
                       <label className="text-sm">Monto a aplicar:</label>
                       <Input
                         type="number"
+                        step="0.01"
                         value={creditAmountToUse}
                         onChange={(e) => {
                           const value = Math.min(
