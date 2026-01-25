@@ -55,7 +55,7 @@ export function ProspectDetailDialog({
   };
   useEffect(() => {
     const fetchChangeHistory = async () => {
-      if (!prospect || prospect.status !== 'finalized') {
+      if (!prospect) {
         setChangeHistory([]);
         return;
       }
@@ -238,10 +238,9 @@ export function ProspectDetailDialog({
           )}
 
           {/* Historial de cambios */}
-          {prospect.status === 'finalized' && (
-            <>
-              <Separator />
-              <div>
+          <>
+            <Separator />
+            <div>
                 <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
                   <History className="h-4 w-4" />
                   Historial de Cambios
@@ -282,7 +281,6 @@ export function ProspectDetailDialog({
                 )}
               </div>
             </>
-          )}
 
           {/* Razón de cancelación */}
           {prospect.status === 'cancelled' && prospect.cancellation_reason && (
