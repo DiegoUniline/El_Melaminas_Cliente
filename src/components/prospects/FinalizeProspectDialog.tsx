@@ -153,11 +153,11 @@ export function FinalizeProspectDialog({
       antenna_ip: '',
       notes: '',
       plan_id: '',
-      monthly_fee: 0,
+      monthly_fee: undefined,
       installation_date: new Date().toISOString().split('T')[0],
       billing_day: 10,
-      installation_cost: 0,
-      prorated_amount: 0,
+      installation_cost: undefined,
+      prorated_amount: undefined,
     },
   });
 
@@ -185,11 +185,11 @@ export function FinalizeProspectDialog({
         notes: prospect.notes || '',
         // Billing defaults
         plan_id: '',
-        monthly_fee: 0,
+        monthly_fee: undefined,
         installation_date: new Date().toISOString().split('T')[0],
         billing_day: 10,
-        installation_cost: 0,
-        prorated_amount: 0,
+        installation_cost: undefined,
+        prorated_amount: undefined,
       });
       setActiveTab('personal');
       setSelectedCharges([]);
@@ -522,7 +522,15 @@ export function FinalizeProspectDialog({
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFinalize)} className="space-y-4">
+          <form 
+            onSubmit={form.handleSubmit(handleFinalize)} 
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+                e.preventDefault();
+              }
+            }}
+            className="space-y-4"
+          >
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
               <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
@@ -819,9 +827,10 @@ export function FinalizeProspectDialog({
                             type="number"
                             min="0"
                             step="0.01"
-                            {...field}
+                            value={field.value ?? ''}
                             onChange={(e) => {
-                              field.onChange(parseFloat(e.target.value) || 0);
+                              const value = e.target.value;
+                              field.onChange(value === '' ? undefined : parseFloat(value));
                               setTimeout(calculateProrationAmount, 0);
                             }}
                           />
@@ -890,8 +899,11 @@ export function FinalizeProspectDialog({
                             type="number"
                             min="0"
                             step="0.01"
-                            {...field}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            value={field.value ?? ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              field.onChange(value === '' ? undefined : parseFloat(value));
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -922,8 +934,11 @@ export function FinalizeProspectDialog({
                             type="number"
                             min="0"
                             step="0.01"
-                            {...field}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            value={field.value ?? ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              field.onChange(value === '' ? undefined : parseFloat(value));
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
