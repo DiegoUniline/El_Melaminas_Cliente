@@ -30,14 +30,22 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle, History, DollarSign, Calculator } from 'lucide-react';
+import { Loader2, CheckCircle, History, DollarSign, Calculator, X, FileText, MapPin, Wifi, ClipboardList } from 'lucide-react';
 import type { Prospect } from '@/types/database';
 import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
-import { PhoneCountry, formatPhoneNumber } from '@/lib/phoneUtils';
+import { type PhoneCountry, formatPhoneDisplay } from '@/lib/phoneUtils';
 import { formatCurrency, calculateProration } from '@/lib/billing';
+
+interface SelectedCharge {
+  catalog_id: string;
+  name: string;
+  amount: number;
+}
 
 const finalizeSchema = z.object({
   // Personal data
@@ -68,8 +76,6 @@ const finalizeSchema = z.object({
   billing_day: z.number().min(1).max(28, 'El día de corte debe ser entre 1 y 28'),
   installation_cost: z.number().min(0),
   prorated_amount: z.number().min(0),
-  additional_charges: z.number().min(0).optional(),
-  additional_charges_notes: z.string().optional(),
 });
 
 type FinalizeFormValues = z.infer<typeof finalizeSchema>;
@@ -81,6 +87,9 @@ interface FinalizeProspectDialogProps {
   onSuccess: () => void;
 }
 
+const TABS = ['personal', 'address', 'technical', 'billing', 'summary'] as const;
+type TabValue = typeof TABS[number];
+
 export function FinalizeProspectDialog({
   open,
   onOpenChange,
@@ -88,7 +97,10 @@ export function FinalizeProspectDialog({
   onSuccess,
 }: FinalizeProspectDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('personal');
+  const [activeTab, setActiveTab] = useState<TabValue>('personal');
+  const [selectedCharges, setSelectedCharges] = useState<SelectedCharge[]>([]);
+  const [selectedChargeId, setSelectedChargeId] = useState('');
+  const [chargeAmount, setChargeAmount] = useState('');
   const { user } = useAuth();
 
   // Fetch service plans
@@ -100,6 +112,20 @@ export function FinalizeProspectDialog({
         .select('*')
         .eq('is_active', true)
         .order('monthly_fee');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch charge catalog
+  const { data: chargeCatalog = [] } = useQuery({
+    queryKey: ['charge_catalog'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('charge_catalog')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
       if (error) throw error;
       return data;
     },
@@ -132,8 +158,6 @@ export function FinalizeProspectDialog({
       billing_day: 10,
       installation_cost: 0,
       prorated_amount: 0,
-      additional_charges: undefined,
-      additional_charges_notes: '',
     },
   });
 
@@ -166,12 +190,54 @@ export function FinalizeProspectDialog({
         billing_day: 10,
         installation_cost: 0,
         prorated_amount: 0,
-        additional_charges: undefined,
-        additional_charges_notes: '',
       });
       setActiveTab('personal');
+      setSelectedCharges([]);
+      setSelectedChargeId('');
+      setChargeAmount('');
     }
   }, [prospect, open, form]);
+
+  // Navigation handlers
+  const handleNext = () => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex < TABS.length - 1) {
+      setActiveTab(TABS[currentIndex + 1]);
+    }
+  };
+
+  const handlePrevious = () => {
+    const currentIndex = TABS.indexOf(activeTab);
+    if (currentIndex > 0) {
+      setActiveTab(TABS[currentIndex - 1]);
+    }
+  };
+
+  // Charge catalog handlers
+  const handleChargeSelect = (catalogId: string) => {
+    setSelectedChargeId(catalogId);
+    const item = chargeCatalog.find(c => c.id === catalogId);
+    if (item) {
+      setChargeAmount(item.default_amount.toString());
+    }
+  };
+
+  const handleAddCharge = () => {
+    const item = chargeCatalog.find(c => c.id === selectedChargeId);
+    if (item && chargeAmount) {
+      setSelectedCharges([...selectedCharges, {
+        catalog_id: item.id,
+        name: item.name,
+        amount: parseFloat(chargeAmount),
+      }]);
+      setSelectedChargeId('');
+      setChargeAmount('');
+    }
+  };
+
+  const handleRemoveCharge = (index: number) => {
+    setSelectedCharges(selectedCharges.filter((_, i) => i !== index));
+  };
 
   // Handle plan selection
   const handlePlanChange = (planId: string) => {
@@ -194,6 +260,16 @@ export function FinalizeProspectDialog({
       form.setValue('prorated_amount', proratedAmount);
     }
   };
+
+  // Get selected plan name
+  const selectedPlanName = servicePlans.find(p => p.id === form.watch('plan_id'))?.name || 'No seleccionado';
+
+  // Calculate totals
+  const totalAdditionalCharges = selectedCharges.reduce((sum, c) => sum + c.amount, 0);
+  const totalInitialBalance = 
+    (form.watch('installation_cost') || 0) + 
+    (form.watch('prorated_amount') || 0) + 
+    totalAdditionalCharges;
 
   if (!prospect) return null;
 
@@ -339,12 +415,6 @@ export function FinalizeProspectDialog({
         // 5. Calculate billing values
         const installDate = new Date(data.installation_date);
         const { firstBillingDate } = calculateProration(installDate, data.billing_day, data.monthly_fee);
-        
-        // Calculate total initial balance
-        const totalInitialBalance = 
-          (data.installation_cost || 0) + 
-          (data.prorated_amount || 0) + 
-          (data.additional_charges || 0);
 
         // Create billing record with real values
         const { error: billingError } = await supabase
@@ -358,8 +428,8 @@ export function FinalizeProspectDialog({
             first_billing_date: firstBillingDate.toISOString().split('T')[0],
             billing_day: data.billing_day,
             prorated_amount: data.prorated_amount,
-            additional_charges: data.additional_charges || 0,
-            additional_charges_notes: data.additional_charges_notes || null,
+            additional_charges: totalAdditionalCharges,
+            additional_charges_notes: selectedCharges.map(c => c.name).join(', ') || null,
             balance: totalInitialBalance,
           });
 
@@ -368,7 +438,7 @@ export function FinalizeProspectDialog({
         }
 
         // 6. Create initial charges in client_charges
-        const chargesToCreate = [];
+        const chargesToCreate: any[] = [];
 
         if (data.installation_cost > 0) {
           chargesToCreate.push({
@@ -390,11 +460,13 @@ export function FinalizeProspectDialog({
           });
         }
 
-        if (data.additional_charges && data.additional_charges > 0) {
+        // Add charges from catalog
+        for (const charge of selectedCharges) {
           chargesToCreate.push({
             client_id: clientData.id,
-            description: data.additional_charges_notes || 'Cargos adicionales',
-            amount: data.additional_charges,
+            charge_catalog_id: charge.catalog_id,
+            description: charge.name,
+            amount: charge.amount,
             status: 'pending',
             created_by: user?.id,
           });
@@ -426,6 +498,9 @@ export function FinalizeProspectDialog({
     }
   };
 
+  const isFirstTab = activeTab === 'personal';
+  const isLastTab = activeTab === 'summary';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -448,17 +523,22 @@ export function FinalizeProspectDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFinalize)} className="space-y-4">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="personal">Personal</TabsTrigger>
-                <TabsTrigger value="address">Dirección</TabsTrigger>
-                <TabsTrigger value="technical">Técnico</TabsTrigger>
-                <TabsTrigger value="billing" className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3" />
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
+                <TabsTrigger value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
+                <TabsTrigger value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
+                <TabsTrigger value="billing" className="text-xs sm:text-sm flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 hidden sm:inline" />
                   Facturación
+                </TabsTrigger>
+                <TabsTrigger value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
+                  <ClipboardList className="h-3 w-3 hidden sm:inline" />
+                  Resumen
                 </TabsTrigger>
               </TabsList>
 
+              {/* Personal Tab */}
               <TabsContent value="personal" className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <FormField
@@ -563,6 +643,7 @@ export function FinalizeProspectDialog({
                 </div>
               </TabsContent>
 
+              {/* Address Tab */}
               <TabsContent value="address" className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <FormField
@@ -649,6 +730,7 @@ export function FinalizeProspectDialog({
                 </div>
               </TabsContent>
 
+              {/* Technical Tab */}
               <TabsContent value="technical" className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
@@ -796,7 +878,7 @@ export function FinalizeProspectDialog({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="installation_cost"
@@ -848,77 +930,181 @@ export function FinalizeProspectDialog({
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="additional_charges"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Cargos Adicionales</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="additional_charges_notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notas de Cargos Adicionales</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={2}
-                          placeholder="Describe los cargos adicionales..."
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                {/* Charge Catalog Selector */}
+                <div className="space-y-3">
+                  <FormLabel>Cargos Adicionales (del catálogo)</FormLabel>
+                  <div className="flex gap-2">
+                    <Select value={selectedChargeId} onValueChange={handleChargeSelect}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Seleccionar cargo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {chargeCatalog.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} ({formatCurrency(item.default_amount)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      className="w-32"
+                      placeholder="Monto"
+                      min="0"
+                      step="0.01"
+                      value={chargeAmount}
+                      onChange={(e) => setChargeAmount(e.target.value)}
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={handleAddCharge}
+                      disabled={!selectedChargeId || !chargeAmount}
+                    >
+                      Agregar
+                    </Button>
+                  </div>
+                  
+                  {/* List of added charges */}
+                  {selectedCharges.length > 0 && (
+                    <div className="border rounded-lg p-3 space-y-2">
+                      {selectedCharges.map((charge, index) => (
+                        <div key={index} className="flex justify-between items-center">
+                          <span className="text-sm">{charge.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{formatCurrency(charge.amount)}</span>
+                            <Button 
+                              type="button"
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              onClick={() => handleRemoveCharge(index)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      <Separator />
+                      <div className="flex justify-between items-center text-sm font-medium">
+                        <span>Total cargos adicionales:</span>
+                        <span>{formatCurrency(totalAdditionalCharges)}</span>
+                      </div>
+                    </div>
                   )}
-                />
+                </div>
+              </TabsContent>
 
-                <div className="bg-muted/50 rounded-lg p-4">
-                  <p className="text-sm font-medium mb-2">Resumen de Cargos Iniciales:</p>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Instalación:</span>
-                      <span className="ml-2 font-medium">{formatCurrency(form.watch('installation_cost') || 0)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Prorrateo:</span>
-                      <span className="ml-2 font-medium">{formatCurrency(form.watch('prorated_amount') || 0)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Adicionales:</span>
-                      <span className="ml-2 font-medium">{formatCurrency(form.watch('additional_charges') || 0)}</span>
-                    </div>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <span className="text-muted-foreground">Total Saldo Inicial:</span>
-                    <span className="ml-2 font-bold text-primary">
-                      {formatCurrency(
-                        (form.watch('installation_cost') || 0) + 
-                        (form.watch('prorated_amount') || 0) + 
-                        (form.watch('additional_charges') || 0)
+              {/* Summary Tab */}
+              <TabsContent value="summary" className="space-y-4 pt-4">
+                <div className="space-y-4">
+                  {/* Personal Data */}
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Datos Personales
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm space-y-1">
+                      <p><strong>Nombre:</strong> {form.watch('first_name')} {form.watch('last_name_paterno')} {form.watch('last_name_materno')}</p>
+                      <p><strong>Teléfono 1:</strong> {formatPhoneDisplay(form.watch('phone1'), form.watch('phone1_country'))}</p>
+                      {form.watch('phone2') && (
+                        <p><strong>Teléfono 2:</strong> {formatPhoneDisplay(form.watch('phone2'), form.watch('phone2_country'))}</p>
                       )}
-                    </span>
-                  </div>
+                      {form.watch('phone3_signer') && (
+                        <p><strong>Teléfono Firmante:</strong> {formatPhoneDisplay(form.watch('phone3_signer'), form.watch('phone3_country'))}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Address */}
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        Dirección
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm space-y-1">
+                      <p>{form.watch('street')} {form.watch('exterior_number')}{form.watch('interior_number') && ` Int. ${form.watch('interior_number')}`}</p>
+                      <p>{form.watch('neighborhood')}, {form.watch('city')}</p>
+                      {form.watch('postal_code') && <p>C.P. {form.watch('postal_code')}</p>}
+                    </CardContent>
+                  </Card>
+
+                  {/* Technical */}
+                  {(form.watch('ssid') || form.watch('antenna_ip')) && (
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Wifi className="h-4 w-4" />
+                          Datos Técnicos
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-sm space-y-1">
+                        {form.watch('ssid') && <p><strong>SSID:</strong> {form.watch('ssid')}</p>}
+                        {form.watch('antenna_ip') && <p><strong>IP Antena:</strong> {form.watch('antenna_ip')}</p>}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Billing Summary */}
+                  <Card className="border-primary">
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Resumen de Facturación
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Plan:</span>
+                          <span className="font-medium">{selectedPlanName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Mensualidad:</span>
+                          <span className="font-medium">{formatCurrency(form.watch('monthly_fee'))}</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Fecha de Instalación:</span>
+                          <span>{form.watch('installation_date')}</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Día de Corte:</span>
+                          <span>{form.watch('billing_day')}</span>
+                        </div>
+                        <Separator className="my-2" />
+                        <div className="flex justify-between">
+                          <span>Costo de Instalación:</span>
+                          <span className="font-medium">{formatCurrency(form.watch('installation_cost'))}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Prorrateo:</span>
+                          <span className="font-medium">{formatCurrency(form.watch('prorated_amount'))}</span>
+                        </div>
+                        {selectedCharges.map((charge, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span>{charge.name}:</span>
+                            <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                          </div>
+                        ))}
+                        <Separator className="my-2" />
+                        <div className="flex justify-between text-base font-bold text-primary">
+                          <span>Total Saldo Inicial:</span>
+                          <span>{formatCurrency(totalInitialBalance)}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </TabsContent>
             </Tabs>
 
-            <DialogFooter className="pt-4">
+            <DialogFooter className="pt-4 flex-col sm:flex-row gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -927,20 +1113,38 @@ export function FinalizeProspectDialog({
               >
                 Cancelar
               </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Finalizando...
-                  </>
-                ) : (
-                  'Finalizar y Crear Cliente'
-                )}
-              </Button>
+              
+              {!isFirstTab && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={isLoading}
+                >
+                  Anterior
+                </Button>
+              )}
+              
+              {isLastTab ? (
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Finalizando...
+                    </>
+                  ) : (
+                    'Finalizar y Crear Cliente'
+                  )}
+                </Button>
+              ) : (
+                <Button type="button" onClick={handleNext}>
+                  Siguiente
+                </Button>
+              )}
             </DialogFooter>
           </form>
         </Form>
