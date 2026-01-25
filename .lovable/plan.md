@@ -1,217 +1,251 @@
 
-# Plan: Eliminar Campo de Periodo y Mejorar Visualización de Mensualidades Cubiertas
+# Plan: Corregir Visualización de Saldo y Próximo Vencimiento
 
 ## Problema Identificado
 
-El usuario describe correctamente el flujo:
-- Si el saldo es $1,000 y la mensualidad es $300, al pagar $1,600:
-  - $1,000 van a cubrir el saldo pendiente
-  - $600 restantes cubren 2 mensualidades futuras ($600 / $300 = 2 meses)
-  - Estas mensualidades deben pre-registrarse como pagadas en el historial
+El cliente pagó $90,000 y el sistema creó correctamente 272 mensualidades adelantadas hasta Junio 2047. Sin embargo:
 
-**Estado Actual:**
-- El sistema YA tiene la lógica de crear mensualidades adelantadas (líneas 252-296 de `PaymentFormDialog.tsx`)
-- PERO el formulario pide "Periodo de Pago" (mes/año) manualmente, lo cual es redundante
-- El periodo se guarda en la tabla `payments` pero las mensualidades cubiertas están en `client_charges`
+1. **Saldo Actual muestra -$92,751.67** (saldo a favor) cuando debería mostrar $0 o un pequeño remanente
+2. **Próximo Vencimiento muestra Febrero 2026** cuando debería mostrar Julio 2047 (el mes después del último pagado)
 
-**Problema UX:**
-- No tiene sentido pedir periodo ya que el sistema calcula automáticamente qué cargos se cubren
-- Las mensualidades adelantadas ya se crean correctamente en `client_charges`
-- El campo de periodo confunde porque el pago puede cubrir múltiples periodos
+### Datos Actuales:
+- Total pagos: $95,350.00
+- Total mensualidades creadas y pagadas: $95,200.00 (272 × $350)
+- Cargos pendientes: 0
+- Última mensualidad pagada: Junio 2047
 
 ---
 
-## Solución Propuesta
+## Solución
 
-### Parte 1: Eliminar Campos de Periodo del Formulario de Pagos
+### Parte 1: Calcular el Próximo Vencimiento Basado en Mensualidades Pagadas
 
-**Archivo**: `src/components/payments/PaymentFormDialog.tsx`
+**Archivo**: `src/pages/ClientDetail.tsx`
 
-1. **Eliminar del schema:**
-```typescript
-// Eliminar estas líneas
-period_month: z.number().min(1).max(12).optional(),
-period_year: z.number().min(2020).optional(),
-```
-
-2. **Eliminar de defaultValues:**
-```typescript
-// Eliminar
-period_month: currentMonth,
-period_year: currentYear,
-```
-
-3. **Eliminar los campos del formulario (líneas 513-568):**
-   - Eliminar el `<div className="grid grid-cols-2 gap-4">` que contiene "Mes del Periodo" y "Año del Periodo"
-
-4. **Actualizar el insert de payments (línea 190-191):**
-```typescript
-// Eliminar estas líneas
-period_month: data.period_month || null,
-period_year: data.period_year || null,
-```
-
-5. **Eliminar constantes no usadas:**
-```typescript
-// Eliminar MONTHS array (líneas 67-80)
-// Eliminar currentMonth y currentYear si ya no se usan
-```
-
-### Parte 2: Mostrar Resumen de Aplicación en Toast
-
-Cuando se registra un pago, mostrar un resumen claro de a qué se aplicó:
+Crear una función que encuentre el último mes pagado y devuelva el siguiente:
 
 ```typescript
-// Después de procesar el pago, construir mensaje informativo
-let summaryMessage = 'Pago registrado. ';
-const paidCharges = chargesPaidCount;
-const advanceMonths = monthsToCover;
-
-if (paidCharges > 0) {
-  summaryMessage += `${paidCharges} cargo(s) cubierto(s). `;
+// Nueva función para calcular próximo vencimiento basado en mensualidades
+function getNextDueDate(charges: any[], billingDay: number): { date: Date; coveredUntil: string | null } {
+  // Filtrar solo mensualidades pagadas
+  const paidMensualidades = charges.filter((c: any) => 
+    c.description?.toLowerCase().includes('mensualidad') && 
+    c.status === 'paid'
+  );
+  
+  if (paidMensualidades.length === 0) {
+    // Sin mensualidades pagadas, usar cálculo tradicional
+    return { date: getNextBillingDate(billingDay), coveredUntil: null };
+  }
+  
+  // Encontrar el mes/año más alto
+  let maxMonth = 0;
+  let maxYear = 0;
+  
+  paidMensualidades.forEach((charge: any) => {
+    const match = charge.description?.match(/(\d{1,2})\/(\d{4})/);
+    if (match) {
+      const month = parseInt(match[1]);
+      const year = parseInt(match[2]);
+      if (year > maxYear || (year === maxYear && month > maxMonth)) {
+        maxYear = year;
+        maxMonth = month;
+      }
+    }
+  });
+  
+  if (maxYear === 0) {
+    return { date: getNextBillingDate(billingDay), coveredUntil: null };
+  }
+  
+  // El siguiente mes después del último pagado
+  let nextMonth = maxMonth + 1;
+  let nextYear = maxYear;
+  if (nextMonth > 12) {
+    nextMonth = 1;
+    nextYear++;
+  }
+  
+  const coveredUntil = format(new Date(maxYear, maxMonth - 1, 1), 'MMMM yyyy', { locale: es });
+  
+  return {
+    date: new Date(nextYear, nextMonth - 1, billingDay),
+    coveredUntil
+  };
 }
-if (advanceMonths > 0) {
-  summaryMessage += `${advanceMonths} mensualidad(es) adelantada(s). `;
-}
-if (newBalance < 0) {
-  summaryMessage += `Saldo a favor: ${formatCurrency(Math.abs(newBalance))}`;
-}
-
-toast.success(summaryMessage);
 ```
 
-### Parte 3: Actualizar Vista de Pagos
+### Parte 2: Mostrar Saldo Correcto
 
-**Archivo**: `src/pages/Payments.tsx`
-
-1. **Eliminar columna de Periodo de la tabla:**
-```typescript
-// Eliminar en columna 'client' las líneas 103-107
-{payment.period_month && payment.period_year && (
-  <p className="text-sm text-muted-foreground">
-    Periodo: {payment.period_month}/{payment.period_year}
-  </p>
-)}
+El saldo debería calcularse como:
+```
+Saldo = Total de cargos pendientes - Crédito no aplicado
 ```
 
-2. **Actualizar exportación Excel (línea 74):**
+Si no hay cargos pendientes y todo se aplicó a mensualidades, el saldo es $0.
+
+**Actualizar la visualización del saldo:**
+
 ```typescript
-// Eliminar línea
-'Periodo': payment.period_month && payment.period_year ? `${payment.period_month}/${payment.period_year}` : '',
+// Calcular el saldo real basado en cargos
+const pendingChargesTotal = charges
+  .filter((c: any) => c.status === 'pending')
+  .reduce((sum: number, c: any) => sum + Number(c.amount), 0);
+
+// Si no hay cargos pendientes y hay mensualidades adelantadas, el saldo efectivo es 0
+const paidAdvanceMensualidades = charges.filter((c: any) => 
+  c.description?.toLowerCase().includes('mensualidad adelantada') && 
+  c.status === 'paid'
+);
+
+const hasAdvancePayments = paidAdvanceMensualidades.length > 0;
+const effectiveBalance = pendingChargesTotal; // Saldo real = cargos pendientes
+
+// Para mostrar en UI
+const displayEffectiveBalance = hasAdvancePayments && pendingChargesTotal === 0 
+  ? 0 
+  : billing?.balance || 0;
 ```
 
-3. **Agregar columna "Cargos Cubiertos":** (Opcional pero útil)
-   - Mostrar cuántos cargos (`client_charges`) están asociados a este `payment_id`
+### Parte 3: Actualizar la UI de las Cards de Resumen
 
-### Parte 4: Actualizar Detalle de Pago
+**Card "Saldo Actual" (líneas 1057-1075):**
 
-**Archivo**: `src/components/payments/PaymentDetailDialog.tsx`
+Cambiar la lógica para mostrar:
+- Si hay cargos pendientes: mostrar el total de cargos pendientes como adeudo
+- Si no hay cargos pendientes pero hay mensualidades adelantadas: mostrar $0 y "Pagado por adelantado"
+- Si hay saldo a favor real (crédito no aplicado): mostrar el saldo a favor
 
-1. **Eliminar sección de Periodo (líneas 74-84):**
+**Card "Próximo Vencimiento" (líneas 1077-1095):**
+
+Usar la nueva función `getNextDueDate` y mostrar:
+- La fecha del próximo mes no cubierto
+- Un subtítulo indicando hasta cuándo está cubierto: "Cubierto hasta Junio 2047"
+
+---
+
+## Cambios Específicos
+
+### Archivo: `src/pages/ClientDetail.tsx`
+
+#### 1. Agregar nueva función `getNextDueDate` (después de línea 86)
+
+#### 2. Actualizar valores derivados (líneas 384-396)
+
 ```typescript
-// Eliminar este bloque
-{payment.period_month && payment.period_year && (
-  <div className="flex items-start gap-3">
-    <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
-    <div>
-      <p className="text-sm text-muted-foreground">Periodo</p>
-      <p className="font-medium">
-        {payment.period_month}/{payment.period_year}
-      </p>
+// Derived values
+const billing = billingData || client?.client_billing as any;
+const equipment = client?.equipment?.[0] as any;
+const billingDay = billing?.billing_day || 10;
+
+// Nuevo: Calcular próximo vencimiento basado en mensualidades pagadas
+const { date: nextDueDate, coveredUntil } = useMemo(() => {
+  return getNextDueDate(charges, billingDay);
+}, [charges, billingDay]);
+
+// Calcular saldo efectivo
+const pendingChargesTotal = useMemo(() => {
+  return charges
+    .filter((c: any) => c.status === 'pending')
+    .reduce((sum: number, c: any) => sum + Number(c.amount), 0);
+}, [charges]);
+
+const hasAdvancePayments = useMemo(() => {
+  return charges.some((c: any) => 
+    c.description?.toLowerCase().includes('mensualidad adelantada') && 
+    c.status === 'paid'
+  );
+}, [charges]);
+
+// El saldo efectivo es el total de cargos pendientes
+const effectiveBalance = pendingChargesTotal;
+const hasFavorBalance = effectiveBalance < 0;
+const hasDebt = effectiveBalance > 0;
+const displayBalance = Math.abs(effectiveBalance);
+const isUpToDate = effectiveBalance === 0 && hasAdvancePayments;
+```
+
+#### 3. Actualizar Card "Saldo Actual" (líneas 1057-1075)
+
+```tsx
+<Card className={`border-2 ${isUpToDate ? 'border-emerald-200 bg-emerald-50/50' : hasDebt ? 'border-red-200 bg-red-50/50' : ''}`}>
+  <CardContent className="pt-4 pb-3">
+    <div className="flex items-center justify-between mb-2">
+      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saldo Actual</span>
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isUpToDate ? 'bg-emerald-100' : hasDebt ? 'bg-red-100' : 'bg-muted'}`}>
+        <CreditCard className={`h-5 w-5 ${isUpToDate ? 'text-emerald-600' : hasDebt ? 'text-red-600' : 'text-muted-foreground'}`} />
+      </div>
     </div>
-  </div>
-)}
+    <p className={`text-3xl font-bold ${isUpToDate ? 'text-emerald-600' : hasDebt ? 'text-red-600' : ''}`}>
+      {formatCurrency(displayBalance)}
+    </p>
+    <p className="text-xs flex items-center gap-1 mt-1">
+      <span className={`w-2 h-2 rounded-full ${isUpToDate ? 'bg-emerald-500' : hasDebt ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+      <span className={isUpToDate ? 'text-emerald-600' : hasDebt ? 'text-red-600' : 'text-emerald-600'}>
+        {isUpToDate ? 'Pagado por adelantado' : hasDebt ? 'Con adeudo' : 'Cuenta al corriente'}
+      </span>
+    </p>
+  </CardContent>
+</Card>
 ```
 
-2. **Agregar sección "Cargos Cubiertos":** 
-   - Hacer query de `client_charges` donde `payment_id = payment.id`
-   - Mostrar lista de cargos que fueron pagados con este pago
-   - Esto da visibilidad clara de a qué se aplicó el pago
+#### 4. Actualizar Card "Próximo Vencimiento" (líneas 1077-1095)
+
+```tsx
+<Card className="border-2">
+  <CardContent className="pt-4 pb-3">
+    <div className="flex items-center justify-between mb-2">
+      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Próximo Vencimiento</span>
+      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+        <Calendar className="h-5 w-5 text-amber-600" />
+      </div>
+    </div>
+    <p className="text-2xl font-bold">
+      {format(nextDueDate, 'dd MMM yyyy', { locale: es })}
+    </p>
+    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+      <span className={`w-2 h-2 rounded-full ${coveredUntil ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+      {coveredUntil 
+        ? `Cubierto hasta ${coveredUntil}` 
+        : pendingCharges.length > 0 
+          ? `${pendingCharges.length} cargo(s) pendiente(s)` 
+          : 'Sin cargos pendientes'}
+    </p>
+  </CardContent>
+</Card>
+```
 
 ---
 
-## Archivos a Modificar
+## Resultado Esperado
 
-| Archivo | Cambios |
-|---------|---------|
-| `src/components/payments/PaymentFormDialog.tsx` | Eliminar campos de periodo, actualizar insert |
-| `src/pages/Payments.tsx` | Eliminar referencia a periodo en tabla y export |
-| `src/components/payments/PaymentDetailDialog.tsx` | Eliminar periodo, agregar lista de cargos cubiertos |
+### Antes:
+- **Saldo Actual**: -$92,751.67 (Saldo a favor) 
+- **Próximo Vencimiento**: 10 Feb 2026
+
+### Después:
+- **Saldo Actual**: $0.00 (Pagado por adelantado)
+- **Próximo Vencimiento**: 10 Jul 2047 - "Cubierto hasta Junio 2047"
 
 ---
 
-## Flujo de Usuario Final
+## Visualización Final
 
-### Al Registrar Pago:
-1. Usuario ingresa monto ($1,600)
-2. Usuario selecciona tipo de pago y fecha
-3. Usuario hace clic en "Registrar Pago"
-4. **Sistema procesa automáticamente:**
-   - Paga cargos pendientes del más antiguo al más nuevo
-   - Si hay excedente, crea mensualidades adelantadas marcadas como pagadas
-   - Si queda sobrante (no alcanza para otra mensualidad), queda como saldo a favor
-5. **Toast muestra:** "Pago registrado. 3 cargo(s) cubierto(s). 2 mensualidad(es) adelantada(s)."
-
-### Al Ver Detalle de Pago:
-1. Muestra monto, fecha, tipo, banco
-2. **Nueva sección "Cargos Cubiertos":**
-   - Costo de instalación - $1,000
-   - Mensualidad adelantada 2/2026 - $300
-   - Mensualidad adelantada 3/2026 - $300
-
-### Historial de Mensualidades (client_charges):
-El usuario verá en el historial del cliente:
-- Mensualidad 2/2026 - Pagada (vinculada al pago)
-- Mensualidad 3/2026 - Pagada (vinculada al pago)
+```text
++-------------------+  +-------------------+  +-------------------+
+|  Tarifa Mensual   |  |   Saldo Actual    |  | Próximo Vencimiento|
+|                   |  |                   |  |                   |
+|     $350.00       |  |      $0.00        |  |   10 Jul 2047     |
+|   Plan activo     |  | Pagado adelantado |  | Cubierto hasta    |
+|                   |  |                   |  | Junio 2047        |
++-------------------+  +-------------------+  +-------------------+
+```
 
 ---
 
 ## Beneficios
 
-1. **Simplicidad**: No se pide información redundante al operador
-2. **Precisión**: El sistema calcula exactamente qué se cubre
-3. **Trazabilidad**: Cada cargo sabe qué pago lo cubrió
-4. **Flexibilidad**: El pago puede cubrir múltiples tipos de cargos (instalación + prorrateo + mensualidades)
-5. **Visibilidad**: El detalle del pago muestra exactamente a qué se aplicó
-
----
-
-## Sección Técnica
-
-### Schema después de cambios:
-```typescript
-const paymentSchema = z.object({
-  amount: z.number().min(0),
-  payment_type: z.string().optional(),
-  bank_type: z.string().optional(),
-  payment_date: z.string().min(1),
-  // ELIMINADO: period_month, period_year
-  receipt_number: z.string().optional(),
-  payer_name: z.string().optional(),
-  payer_phone: z.string().optional(),
-  notes: z.string().optional(),
-  use_credit_balance: z.boolean().optional(),
-  credit_amount_to_use: z.number().optional(),
-});
-```
-
-### Query para cargos cubiertos en PaymentDetailDialog:
-```typescript
-const { data: coveredCharges } = useQuery({
-  queryKey: ['payment_charges', payment?.id],
-  queryFn: async () => {
-    if (!payment) return [];
-    const { data, error } = await supabase
-      .from('client_charges')
-      .select('id, description, amount, paid_date')
-      .eq('payment_id', payment.id)
-      .order('created_at');
-    if (error) throw error;
-    return data;
-  },
-  enabled: !!payment,
-});
-```
-
-### Nota sobre datos existentes:
-Los pagos existentes que tienen `period_month` y `period_year` seguirán guardados en la base de datos. Simplemente no se mostrarán ni se pedirán en nuevos registros. La información real de qué cargos se cubrieron está en `client_charges.payment_id`.
+1. **Claridad**: El usuario ve claramente que está al corriente y hasta cuándo
+2. **Precisión**: El saldo refleja la realidad (cargos pendientes reales)
+3. **Información útil**: El próximo vencimiento indica cuándo realmente necesita pagar
+4. **UX mejorada**: El mensaje "Pagado por adelantado" es más informativo que "Saldo a favor"
