@@ -479,6 +479,18 @@ export default function ClientDetail() {
   const hasDebt = pendingChargesTotal > 0;
   const displayBalance = isUpToDate ? 0 : pendingChargesTotal;
 
+  // Calcular crédito realmente disponible (solo si hay saldo a favor NO aplicado a mensualidades)
+  // Si ya se crearon mensualidades adelantadas, el crédito ya se usó
+  const effectiveCreditBalance = useMemo(() => {
+    if (hasAdvancePayments) {
+      // El crédito ya fue aplicado a mensualidades adelantadas
+      return 0;
+    }
+    // Si no hay mensualidades adelantadas pero hay saldo negativo en billing, ese es crédito disponible
+    const billingBalance = billing?.balance || 0;
+    return billingBalance < 0 ? Math.abs(billingBalance) : 0;
+  }, [hasAdvancePayments, billing?.balance]);
+
   const mensualidadCharges = charges.filter((c: any) => 
     c.description?.toLowerCase().includes('mensualidad')
   );
@@ -2215,10 +2227,13 @@ export default function ClientDetail() {
           client={client}
           open={showPaymentDialog}
           onOpenChange={setShowPaymentDialog}
+          effectiveCreditBalance={effectiveCreditBalance}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['payments', clientId] });
             queryClient.invalidateQueries({ queryKey: ['client_billing', clientId] });
+            queryClient.invalidateQueries({ queryKey: ['client_charges', clientId] });
             refetchBilling();
+            refetchCharges();
           }}
         />
 

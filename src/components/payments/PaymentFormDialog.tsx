@@ -60,20 +60,29 @@ interface PaymentFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  /** 
+   * The effective available credit balance after considering advance payments.
+   * If not provided, it will be calculated from billing.balance, but this may be inaccurate
+   * if credit has already been applied to advance mensualidades.
+   */
+  effectiveCreditBalance?: number;
 }
 
 
-export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: PaymentFormDialogProps) {
+export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effectiveCreditBalance }: PaymentFormDialogProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [useCreditBalance, setUseCreditBalance] = useState(false);
   const [creditAmountToUse, setCreditAmountToUse] = useState(0);
   
-  // Calculate available credit balance (negative balance means credit)
-  const availableCreditBalance = client?.client_billing?.balance 
-    ? Math.abs(Math.min(client.client_billing.balance, 0)) 
-    : 0;
+  // Use the effective credit balance if provided, otherwise fall back to billing.balance
+  // effectiveCreditBalance = 0 means no credit available (all applied to advance payments)
+  const availableCreditBalance = effectiveCreditBalance !== undefined 
+    ? effectiveCreditBalance 
+    : (client?.client_billing?.balance 
+        ? Math.abs(Math.min(client.client_billing.balance, 0)) 
+        : 0);
   const hasCreditBalance = availableCreditBalance > 0;
 
   const currentDate = new Date();
