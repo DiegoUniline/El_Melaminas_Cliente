@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { CreditCard, User, Calendar, FileText } from 'lucide-react';
+import { CreditCard, User, Calendar, Receipt, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import type { Payment, Client } from '@/types/database';
 
 type PaymentWithClient = Payment & {
@@ -22,6 +24,22 @@ interface PaymentDetailDialogProps {
 }
 
 export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDetailDialogProps) {
+  // Fetch covered charges for this payment
+  const { data: coveredCharges = [], isLoading: isLoadingCharges } = useQuery({
+    queryKey: ['payment_charges', payment?.id],
+    queryFn: async () => {
+      if (!payment) return [];
+      const { data, error } = await supabase
+        .from('client_charges')
+        .select('id, description, amount, paid_date')
+        .eq('payment_id', payment.id)
+        .order('created_at');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!payment?.id && open,
+  });
+
   if (!payment) return null;
 
   return (
@@ -71,18 +89,6 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
               </div>
             </div>
 
-            {payment.period_month && payment.period_year && (
-              <div className="flex items-start gap-3">
-                <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Periodo</p>
-                  <p className="font-medium">
-                    {payment.period_month}/{payment.period_year}
-                  </p>
-                </div>
-              </div>
-            )}
-
             {payment.bank_type && (
               <div>
                 <p className="text-sm text-muted-foreground">Banco</p>
@@ -121,6 +127,46 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
               </div>
             </>
           )}
+
+          <Separator />
+
+          {/* Covered Charges Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Receipt className="h-5 w-5 text-muted-foreground" />
+              <p className="font-medium">Cargos Cubiertos</p>
+            </div>
+            
+            {isLoadingCharges ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : coveredCharges.length > 0 ? (
+              <div className="space-y-2">
+                {coveredCharges.map((charge) => (
+                  <div
+                    key={charge.id}
+                    className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md"
+                  >
+                    <span className="text-sm">{charge.description}</span>
+                    <span className="text-sm font-medium text-green-600">
+                      ${charge.amount.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <span className="text-sm font-medium">Total aplicado</span>
+                  <span className="font-bold text-green-600">
+                    ${coveredCharges.reduce((sum, c) => sum + c.amount, 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                No hay cargos vinculados a este pago
+              </p>
+            )}
+          </div>
 
           <Separator />
 

@@ -71,7 +71,6 @@ export default function Payments() {
       'Tipo': payment.payment_type,
       'Banco': payment.bank_type || '',
       'Recibo': payment.receipt_number || '',
-      'Periodo': payment.period_month && payment.period_year ? `${payment.period_month}/${payment.period_year}` : '',
       'Notas': payment.notes || '',
     }));
     exportToExcel(exportData, 'pagos');
@@ -96,16 +95,9 @@ export default function Payments() {
       key: 'client',
       header: 'Cliente',
       render: (payment: PaymentWithClient) => (
-        <div>
-          <p className="font-medium">
-            {payment.clients?.first_name} {payment.clients?.last_name_paterno}
-          </p>
-          {payment.period_month && payment.period_year && (
-            <p className="text-sm text-muted-foreground">
-              Periodo: {payment.period_month}/{payment.period_year}
-            </p>
-          )}
-        </div>
+        <p className="font-medium">
+          {payment.clients?.first_name} {payment.clients?.last_name_paterno}
+        </p>
       ),
     },
     {

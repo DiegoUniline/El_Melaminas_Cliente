@@ -45,8 +45,6 @@ const paymentSchema = z.object({
   payment_type: z.string().optional(),
   bank_type: z.string().optional(),
   payment_date: z.string().min(1, 'La fecha es requerida'),
-  period_month: z.number().min(1).max(12).optional(),
-  period_year: z.number().min(2020).optional(),
   receipt_number: z.string().optional(),
   payer_name: z.string().optional(),
   payer_phone: z.string().optional(),
@@ -64,20 +62,6 @@ interface PaymentFormDialogProps {
   onSuccess: () => void;
 }
 
-const MONTHS = [
-  { value: 1, label: 'Enero' },
-  { value: 2, label: 'Febrero' },
-  { value: 3, label: 'Marzo' },
-  { value: 4, label: 'Abril' },
-  { value: 5, label: 'Mayo' },
-  { value: 6, label: 'Junio' },
-  { value: 7, label: 'Julio' },
-  { value: 8, label: 'Agosto' },
-  { value: 9, label: 'Septiembre' },
-  { value: 10, label: 'Octubre' },
-  { value: 11, label: 'Noviembre' },
-  { value: 12, label: 'Diciembre' },
-];
 
 export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: PaymentFormDialogProps) {
   const { user } = useAuth();
@@ -93,8 +77,6 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
   const hasCreditBalance = availableCreditBalance > 0;
 
   const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1;
-  const currentYear = currentDate.getFullYear();
 
   // Fetch payment methods from catalog
   const { data: paymentMethods = [] } = useQuery({
@@ -131,8 +113,6 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
       payment_type: '',
       bank_type: '',
       payment_date: currentDate.toISOString().split('T')[0],
-      period_month: currentMonth,
-      period_year: currentYear,
       receipt_number: '',
       payer_name: '',
       payer_phone: '',
@@ -187,8 +167,6 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
           payment_type: data.payment_type || 'Saldo a favor',
           bank_type: data.bank_type || null,
           payment_date: data.payment_date,
-          period_month: data.period_month || null,
-          period_year: data.period_year || null,
           receipt_number: data.receipt_number || null,
           payer_name: data.payer_name || null,
           payer_phone: data.payer_phone || null,
@@ -207,8 +185,6 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
           amount: 0,
           payment_type: 'Saldo a favor',
           payment_date: data.payment_date,
-          period_month: data.period_month || null,
-          period_year: data.period_year || null,
           notes: `Aplicación de saldo a favor: $${creditUsed.toLocaleString()}`,
           created_by: user?.id,
         }).select().single();
@@ -312,14 +288,27 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
 
         if (balanceError) throw balanceError;
 
-        // Show appropriate message
-        if (creditUsed > 0) {
-          toast.success(`Pago registrado. Se aplicaron $${creditUsed.toLocaleString()} de saldo a favor.`);
-        } else if (newBalance < 0) {
-          toast.success(`Pago registrado. Saldo a favor: $${Math.abs(newBalance).toLocaleString()}`);
-        } else {
-          toast.success('Pago registrado correctamente');
+        // Build summary message
+        const chargesPaidCount = pendingCharges?.filter(c => c.status === 'pending').length || 0;
+        const monthsToCovered = client.client_billing.monthly_fee > 0 
+          ? Math.floor((totalPaymentValue - (pendingCharges?.reduce((sum, c) => sum + c.amount, 0) || 0)) / client.client_billing.monthly_fee)
+          : 0;
+        
+        let summaryMessage = 'Pago registrado. ';
+        if (chargesPaidCount > 0) {
+          summaryMessage += `${chargesPaidCount} cargo(s) cubierto(s). `;
         }
+        if (monthsToCovered > 0) {
+          summaryMessage += `${monthsToCovered} mensualidad(es) adelantada(s). `;
+        }
+        if (creditUsed > 0) {
+          summaryMessage += `Se aplicaron $${creditUsed.toLocaleString()} de saldo a favor. `;
+        }
+        if (newBalance < 0) {
+          summaryMessage += `Saldo a favor: $${Math.abs(newBalance).toLocaleString()}`;
+        }
+        
+        toast.success(summaryMessage.trim());
       } else {
         toast.success('Pago registrado correctamente');
       }
@@ -508,63 +497,6 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess }: Pay
                   )}
                 />
               )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="period_month"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mes del Periodo</FormLabel>
-                    <Select
-                      onValueChange={(v) => field.onChange(parseInt(v))}
-                      defaultValue={field.value?.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Mes" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {MONTHS.map((month) => (
-                          <SelectItem key={month.value} value={month.value.toString()}>
-                            {month.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="period_year"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Año del Periodo</FormLabel>
-                    <Select
-                      onValueChange={(v) => field.onChange(parseInt(v))}
-                      defaultValue={field.value?.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Año" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {[currentYear - 1, currentYear, currentYear + 1].map((year) => (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
 
             <FormField
