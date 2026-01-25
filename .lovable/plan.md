@@ -1,146 +1,409 @@
 
-# Plan: Eliminar Redundancia de Editar y Mejorar Flujo de Conversión
+# Plan: Mejorar Flujo de Conversión con Resumen y Cargos del Catálogo
 
-## Problema Identificado
+## Resumen del Problema
 
-### 1. Redundancia del Botón Editar
-Actualmente existen dos botones "Editar" para clientes:
-- **En la tabla de clientes** (`Clients.tsx` líneas 265-267): Abre `ClientFormDialog` directamente
-- **Dentro del modal de detalle** (`ClientDetailDialog.tsx` líneas 824-827): También abre `ClientFormDialog`
+El usuario necesita que el modal de conversión de prospecto a cliente (`FinalizeProspectDialog`):
 
-El usuario quiere eliminar el botón de editar de la tabla externa, dejando solo el que está dentro del detalle del cliente.
-
-### 2. Flujo de Conversión Prospecto a Cliente
-Cuando se convierte un prospecto a cliente (`FinalizeProspectDialog.tsx`):
-- Se crea el cliente
-- Se crea el registro de billing con valores en 0 (líneas 270-282)
-- **No se piden los datos de facturación inicial** (mensualidad, instalación, prorrateo)
-
-El usuario quiere que al convertir un prospecto se abra un formulario para registrar los cargos iniciales, o que exista un botón "Cargos Iniciales" si no se han configurado.
+1. **Muestre un resumen completo** de la facturación inicial con formato moneda
+2. **Los cargos adicionales vengan del catálogo** (`charge_catalog`) en lugar de un input libre
+3. **Navegación por pasos**: Cambiar "Finalizar y Crear Cliente" por "Siguiente" hasta el último paso
+4. **Un tab final de Resumen** que muestre toda la información antes de crear el cliente
 
 ---
 
 ## Solución Propuesta
 
-### Parte 1: Eliminar Botón Editar de la Tabla
+### 1. Agregar Tab de Resumen Final
 
-**Archivo**: `src/pages/Clients.tsx`
+Agregar un 5to tab llamado **"Resumen"** que muestre:
+- Datos personales del cliente
+- Dirección completa
+- Datos técnicos (SSID, IP)
+- **Resumen de facturación** con formato moneda:
+  - Plan seleccionado
+  - Mensualidad
+  - Costo de instalación
+  - Prorrateo
+  - Cargos adicionales (del catálogo)
+  - **Total saldo inicial**
 
-Eliminar las líneas 265-267 de la columna de acciones:
+### 2. Cambiar Cargos Adicionales a Selector del Catálogo
+
+**Cambios en el formulario:**
+
+Reemplazar el input de "Cargos Adicionales" por:
 ```typescript
-// ELIMINAR ESTO:
-<Button variant="ghost" size="icon" onClick={() => handleEdit(client)} title="Editar">
-  <Edit className="h-4 w-4" />
+// Query para obtener catálogo
+const { data: chargeCatalog = [] } = useQuery({
+  queryKey: ['charge_catalog'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('charge_catalog')
+      .select('*')
+      .eq('is_active', true)
+      .order('name');
+    if (error) throw error;
+    return data;
+  },
+});
+
+// Estado para cargos seleccionados (múltiples)
+const [selectedCharges, setSelectedCharges] = useState<{
+  catalog_id: string;
+  name: string;
+  amount: number;
+}[]>([]);
+```
+
+**UI del selector de cargos:**
+- Select para elegir cargo del catálogo
+- Input para modificar monto (pre-llenado con default_amount)
+- Botón "Agregar"
+- Lista de cargos agregados con opción de eliminar
+
+### 3. Navegación por Pasos (Siguiente/Anterior)
+
+**Orden de tabs:**
+1. Personal
+2. Dirección  
+3. Técnico
+4. Facturación
+5. **Resumen** (nuevo)
+
+**Botones del footer:**
+
+```typescript
+const tabs = ['personal', 'address', 'technical', 'billing', 'summary'];
+const currentIndex = tabs.indexOf(activeTab);
+const isLastTab = activeTab === 'summary';
+const isFirstTab = activeTab === 'personal';
+
+// En DialogFooter:
+<Button variant="outline" onClick={() => onOpenChange(false)}>
+  Cancelar
 </Button>
-```
 
-El botón "Editar" dentro del modal de detalle (`ClientDetailDialog.tsx` línea 824-827) permanece intacto.
+{!isFirstTab && (
+  <Button variant="outline" onClick={() => setActiveTab(tabs[currentIndex - 1])}>
+    Anterior
+  </Button>
+)}
 
----
-
-### Parte 2: Mejorar Flujo de Conversión con Facturación Inicial
-
-**Archivo**: `src/components/prospects/FinalizeProspectDialog.tsx`
-
-Agregar un tab adicional "Facturación" con los siguientes campos:
-1. **Plan de servicio** (select de `service_plans`)
-2. **Mensualidad** (pre-llenado del plan pero editable)
-3. **Fecha de instalación** 
-4. **Día de corte**
-5. **Costo de instalación**
-6. **Prorrateo** (calculado automático o editable)
-7. **Cargos adicionales** (opcional)
-
-Modificar el flujo de `handleFinalize`:
-1. Guardar los datos de facturación con valores reales
-2. Crear los cargos iniciales automáticamente en `client_charges`:
-   - Cargo de instalación (si > 0)
-   - Cargo de prorrateo (si > 0)
-   - Cargos adicionales (si > 0)
-3. Actualizar el balance del cliente con la suma de cargos
-
-**Nuevos campos del schema**:
-```typescript
-// Agregar al schema de finalización:
-plan_id: z.string().optional(),
-monthly_fee: z.number().min(0),
-installation_date: z.string(),
-billing_day: z.number().min(1).max(28),
-installation_cost: z.number().min(0),
-prorated_amount: z.number().min(0),
-additional_charges: z.number().min(0),
-additional_charges_notes: z.string().optional(),
-```
-
----
-
-### Parte 3: Botón "Cargos Iniciales" para Clientes Sin Configurar
-
-**Archivo**: `src/pages/ClientDetail.tsx`
-
-En el header del cliente, agregar lógica para detectar si los cargos iniciales han sido configurados:
-```typescript
-const hasInitialBilling = billing && (
-  billing.monthly_fee > 0 || 
-  billing.installation_cost > 0 || 
-  billing.prorated_amount > 0
-);
-```
-
-Si `hasInitialBilling` es `false`, mostrar un botón prominente:
-```typescript
-{!hasInitialBilling && (
-  <Button variant="default" onClick={() => setShowInitialBillingDialog(true)}>
-    <DollarSign className="h-4 w-4 mr-2" />
-    Configurar Cargos Iniciales
+{isLastTab ? (
+  <Button type="submit" className="bg-green-600 hover:bg-green-700">
+    Finalizar y Crear Cliente
+  </Button>
+) : (
+  <Button type="button" onClick={() => setActiveTab(tabs[currentIndex + 1])}>
+    Siguiente
   </Button>
 )}
 ```
 
-**Crear nuevo componente**: `InitialBillingDialog.tsx`
-- Similar al tab de facturación de `FinalizeProspectDialog`
-- Permite configurar mensualidad, instalación, prorrateo
-- Crea los cargos iniciales en `client_charges`
-- Actualiza el balance
+---
+
+## Cambios en el Archivo
+
+### `src/components/prospects/FinalizeProspectDialog.tsx`
+
+#### 1. Agregar imports y queries
+
+```typescript
+// Agregar al schema (modificar additional_charges)
+additional_charges: z.array(z.object({
+  catalog_id: z.string(),
+  name: z.string(),
+  amount: z.number(),
+})).optional(),
+
+// Query para catálogo
+const { data: chargeCatalog = [] } = useQuery({...});
+
+// Estado para cargos seleccionados
+const [selectedCharges, setSelectedCharges] = useState<{
+  catalog_id: string;
+  name: string;
+  amount: number;
+}[]>([]);
+const [selectedChargeId, setSelectedChargeId] = useState('');
+const [chargeAmount, setChargeAmount] = useState('');
+```
+
+#### 2. Modificar TabsList (agregar Resumen)
+
+```typescript
+<TabsList className="grid w-full grid-cols-5">
+  <TabsTrigger value="personal">Personal</TabsTrigger>
+  <TabsTrigger value="address">Dirección</TabsTrigger>
+  <TabsTrigger value="technical">Técnico</TabsTrigger>
+  <TabsTrigger value="billing">Facturación</TabsTrigger>
+  <TabsTrigger value="summary">Resumen</TabsTrigger>
+</TabsList>
+```
+
+#### 3. Reemplazar input de Cargos Adicionales (en tab billing)
+
+```typescript
+{/* Selector de cargos del catálogo */}
+<div className="space-y-3">
+  <FormLabel>Cargos Adicionales</FormLabel>
+  <div className="flex gap-2">
+    <Select value={selectedChargeId} onValueChange={handleChargeSelect}>
+      <SelectTrigger className="flex-1">
+        <SelectValue placeholder="Seleccionar cargo" />
+      </SelectTrigger>
+      <SelectContent>
+        {chargeCatalog.map((item) => (
+          <SelectItem key={item.id} value={item.id}>
+            {item.name} ({formatCurrency(item.default_amount)})
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+    <Input
+      type="number"
+      className="w-32"
+      placeholder="Monto"
+      value={chargeAmount}
+      onChange={(e) => setChargeAmount(e.target.value)}
+    />
+    <Button type="button" variant="outline" onClick={handleAddCharge}>
+      Agregar
+    </Button>
+  </div>
+  
+  {/* Lista de cargos agregados */}
+  {selectedCharges.length > 0 && (
+    <div className="border rounded-lg p-3 space-y-2">
+      {selectedCharges.map((charge, index) => (
+        <div key={index} className="flex justify-between items-center">
+          <span>{charge.name}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{formatCurrency(charge.amount)}</span>
+            <Button variant="ghost" size="icon" onClick={() => handleRemoveCharge(index)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+```
+
+#### 4. Agregar Tab de Resumen
+
+```typescript
+<TabsContent value="summary" className="space-y-4 pt-4">
+  <div className="space-y-4">
+    {/* Datos Personales */}
+    <Card>
+      <CardHeader className="py-3">
+        <CardTitle className="text-sm">Datos Personales</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm">
+        <p><strong>Nombre:</strong> {form.watch('first_name')} {form.watch('last_name_paterno')} {form.watch('last_name_materno')}</p>
+        <p><strong>Teléfono:</strong> {formatPhoneNumber(form.watch('phone1'))}</p>
+      </CardContent>
+    </Card>
+
+    {/* Dirección */}
+    <Card>
+      <CardHeader className="py-3">
+        <CardTitle className="text-sm">Dirección</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm">
+        <p>{form.watch('street')} {form.watch('exterior_number')}{form.watch('interior_number') && ` Int. ${form.watch('interior_number')}`}</p>
+        <p>{form.watch('neighborhood')}, {form.watch('city')}</p>
+      </CardContent>
+    </Card>
+
+    {/* Resumen de Facturación */}
+    <Card className="border-primary">
+      <CardHeader className="py-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <DollarSign className="h-4 w-4" />
+          Resumen de Facturación
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span>Plan:</span>
+            <span className="font-medium">{selectedPlanName}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Mensualidad:</span>
+            <span className="font-medium">{formatCurrency(form.watch('monthly_fee'))}</span>
+          </div>
+          <Separator />
+          <div className="flex justify-between">
+            <span>Costo de Instalación:</span>
+            <span className="font-medium">{formatCurrency(form.watch('installation_cost'))}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Prorrateo:</span>
+            <span className="font-medium">{formatCurrency(form.watch('prorated_amount'))}</span>
+          </div>
+          {selectedCharges.map((charge, i) => (
+            <div key={i} className="flex justify-between">
+              <span>{charge.name}:</span>
+              <span className="font-medium">{formatCurrency(charge.amount)}</span>
+            </div>
+          ))}
+          <Separator />
+          <div className="flex justify-between text-base font-bold text-primary">
+            <span>Total Saldo Inicial:</span>
+            <span>{formatCurrency(totalInitialBalance)}</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+</TabsContent>
+```
+
+#### 5. Modificar DialogFooter
+
+```typescript
+<DialogFooter className="pt-4">
+  <Button
+    type="button"
+    variant="outline"
+    onClick={() => onOpenChange(false)}
+    disabled={isLoading}
+  >
+    Cancelar
+  </Button>
+  
+  {activeTab !== 'personal' && (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={handlePrevious}
+      disabled={isLoading}
+    >
+      Anterior
+    </Button>
+  )}
+  
+  {activeTab === 'summary' ? (
+    <Button
+      type="submit"
+      disabled={isLoading}
+      className="bg-green-600 hover:bg-green-700"
+    >
+      {isLoading ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Finalizando...
+        </>
+      ) : (
+        'Finalizar y Crear Cliente'
+      )}
+    </Button>
+  ) : (
+    <Button type="button" onClick={handleNext}>
+      Siguiente
+    </Button>
+  )}
+</DialogFooter>
+```
+
+#### 6. Actualizar lógica de handleFinalize
+
+Modificar para crear cargos individuales del catálogo:
+
+```typescript
+// Crear cargos adicionales del catálogo
+for (const charge of selectedCharges) {
+  chargesToCreate.push({
+    client_id: clientData.id,
+    charge_catalog_id: charge.catalog_id,
+    description: charge.name,
+    amount: charge.amount,
+    status: 'pending',
+    created_by: user?.id,
+  });
+}
+```
 
 ---
 
-## Archivos a Modificar
+## Funciones Auxiliares Nuevas
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/pages/Clients.tsx` | Eliminar botón Editar de acciones de tabla (líneas 265-267) |
-| `src/components/prospects/FinalizeProspectDialog.tsx` | Agregar tab de Facturación con campos de cargos iniciales |
-| `src/pages/ClientDetail.tsx` | Agregar botón "Cargos Iniciales" si no están configurados |
-| `src/components/clients/InitialBillingDialog.tsx` | Nuevo componente para configurar facturación inicial |
+```typescript
+const tabs = ['personal', 'address', 'technical', 'billing', 'summary'];
+
+const handleNext = () => {
+  const currentIndex = tabs.indexOf(activeTab);
+  if (currentIndex < tabs.length - 1) {
+    setActiveTab(tabs[currentIndex + 1]);
+  }
+};
+
+const handlePrevious = () => {
+  const currentIndex = tabs.indexOf(activeTab);
+  if (currentIndex > 0) {
+    setActiveTab(tabs[currentIndex - 1]);
+  }
+};
+
+const handleChargeSelect = (catalogId: string) => {
+  setSelectedChargeId(catalogId);
+  const item = chargeCatalog.find(c => c.id === catalogId);
+  if (item) {
+    setChargeAmount(item.default_amount.toString());
+  }
+};
+
+const handleAddCharge = () => {
+  const item = chargeCatalog.find(c => c.id === selectedChargeId);
+  if (item && chargeAmount) {
+    setSelectedCharges([...selectedCharges, {
+      catalog_id: item.id,
+      name: item.name,
+      amount: parseFloat(chargeAmount),
+    }]);
+    setSelectedChargeId('');
+    setChargeAmount('');
+  }
+};
+
+const handleRemoveCharge = (index: number) => {
+  setSelectedCharges(selectedCharges.filter((_, i) => i !== index));
+};
+
+// Total calculado
+const totalAdditionalCharges = selectedCharges.reduce((sum, c) => sum + c.amount, 0);
+const totalInitialBalance = 
+  (form.watch('installation_cost') || 0) + 
+  (form.watch('prorated_amount') || 0) + 
+  totalAdditionalCharges;
+```
 
 ---
 
-## Flujo de Usuario Final
+## Resultado Final
 
-### Al Convertir Prospecto a Cliente:
-1. Usuario hace clic en "Finalizar Prospecto"
-2. Se muestran 4 tabs: Personal, Dirección, Técnico, **Facturación**
-3. En tab Facturación se configuran: plan, mensualidad, instalación, prorrateo
-4. Al finalizar, se crean automáticamente los cargos y se actualiza el balance
+### Flujo de Usuario:
 
-### Cliente Existente Sin Cargos Iniciales:
-1. Al abrir detalle del cliente, se muestra botón "Configurar Cargos Iniciales"
-2. Al hacer clic, se abre diálogo para configurar la facturación
-3. Una vez configurado, el botón desaparece y la información se muestra en Estado de Cuenta
+1. **Tab Personal** → Botón "Siguiente"
+2. **Tab Dirección** → Botones "Anterior" / "Siguiente"
+3. **Tab Técnico** → Botones "Anterior" / "Siguiente"
+4. **Tab Facturación** → Botones "Anterior" / "Siguiente"
+   - Selector de plan con precio en formato moneda
+   - Selector de cargos del catálogo con montos predefinidos
+   - Resumen parcial de costos
+5. **Tab Resumen** → Botones "Anterior" / "Finalizar y Crear Cliente"
+   - Datos personales resumidos
+   - Dirección completa
+   - **Resumen de facturación con todos los montos en formato moneda**
+   - Total del saldo inicial destacado
 
-### Editar Cliente:
-1. Usuario va a la tabla de clientes
-2. Hace clic en "Ver" (ojo) para abrir el detalle
-3. Dentro del detalle hace clic en "Editar"
-4. Se abre el formulario completo de edición
-
----
-
-## Resumen de Cambios
-
-1. **Eliminar** botón Editar de la tabla de clientes
-2. **Agregar** tab de Facturación en FinalizeProspectDialog
-3. **Crear** cargos iniciales automáticamente al convertir prospecto
-4. **Agregar** botón "Cargos Iniciales" en ClientDetail para clientes sin configurar
-5. **Crear** nuevo componente InitialBillingDialog para configuración posterior
+### Beneficios:
+- El usuario puede revisar toda la información antes de confirmar
+- Los cargos adicionales vienen del catálogo con montos predefinidos
+- Navegación clara con pasos definidos
+- Todos los montos se muestran con `formatCurrency()`
