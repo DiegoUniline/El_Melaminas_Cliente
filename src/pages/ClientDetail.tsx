@@ -63,6 +63,8 @@ import { ChangeBillingDayDialog } from '@/components/clients/ChangeBillingDayDia
 import { ChangeEquipmentDialog } from '@/components/clients/ChangeEquipmentDialog';
 import { RelocationDialog } from '@/components/clients/RelocationDialog';
 import { PaymentFormDialog } from '@/components/payments/PaymentFormDialog';
+import { EditPaymentDialog } from '@/components/payments/EditPaymentDialog';
+import { EditChargeDialog } from '@/components/charges/EditChargeDialog';
 import { InitialBillingDialog } from '@/components/clients/InitialBillingDialog';
 import { PrintableDocument } from '@/components/documents/PrintableDocument';
 import { AccountStatementDocument } from '@/components/documents/AccountStatementDocument';
@@ -212,11 +214,16 @@ export default function ClientDetail() {
   
   // Charge states
   const [editingCharge, setEditingCharge] = useState<any>(null);
-  const [editChargeAmount, setEditChargeAmount] = useState('');
-  const [editChargeDescription, setEditChargeDescription] = useState('');
-  const [chargeToDelete, setChargeToDelete] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [showEditChargeDialog, setShowEditChargeDialog] = useState(false);
+  const [chargeToDelete, setChargeToDelete] = useState<any>(null);
+  const [isDeletingCharge, setIsDeletingCharge] = useState(false);
   const [isGeneratingMensualidades, setIsGeneratingMensualidades] = useState(false);
+  
+  // Payment edit/delete states
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [showEditPaymentDialog, setShowEditPaymentDialog] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
   
   // Extra charges form states
   const [isAddingExtraCharge, setIsAddingExtraCharge] = useState(false);
@@ -729,6 +736,122 @@ export default function ClientDetail() {
     if (catalog) {
       setExtraChargeAmount(catalog.default_amount.toString());
       setExtraChargeDescription(catalog.name);
+    }
+  };
+
+  // Handle edit charge
+  const handleEditCharge = (charge: any) => {
+    setEditingCharge(charge);
+    setShowEditChargeDialog(true);
+  };
+
+  // Handle delete charge
+  const handleDeleteCharge = async () => {
+    if (!chargeToDelete || !clientId) return;
+
+    setIsDeletingCharge(true);
+    try {
+      // If the charge was pending, reduce the balance
+      if (chargeToDelete.status === 'pending') {
+        const { data: billing } = await supabase
+          .from('client_billing')
+          .select('balance')
+          .eq('client_id', clientId)
+          .maybeSingle();
+
+        if (billing) {
+          const newBalance = (billing.balance || 0) - chargeToDelete.amount;
+          await supabase
+            .from('client_billing')
+            .update({ balance: newBalance })
+            .eq('client_id', clientId);
+        }
+      }
+
+      const { error } = await supabase
+        .from('client_charges')
+        .delete()
+        .eq('id', chargeToDelete.id);
+
+      if (error) throw error;
+
+      toast.success('Cargo eliminado correctamente');
+      setChargeToDelete(null);
+      refetchCharges();
+      refetchBilling();
+    } catch (error: any) {
+      console.error('Error deleting charge:', error);
+      toast.error('Error al eliminar el cargo');
+    } finally {
+      setIsDeletingCharge(false);
+    }
+  };
+
+  // Handle edit payment
+  const handleEditPayment = (payment: Payment) => {
+    setEditingPayment(payment);
+    setShowEditPaymentDialog(true);
+  };
+
+  // Handle delete payment
+  const handleDeletePayment = async () => {
+    if (!paymentToDelete || !clientId) return;
+
+    setIsDeletingPayment(true);
+    try {
+      // Unlink charges associated with this payment
+      const { data: linkedCharges } = await supabase
+        .from('client_charges')
+        .select('id, amount')
+        .eq('payment_id', paymentToDelete.id);
+
+      if (linkedCharges && linkedCharges.length > 0) {
+        // Reset charges to pending and remove payment_id
+        for (const charge of linkedCharges) {
+          await supabase
+            .from('client_charges')
+            .update({ 
+              status: 'pending', 
+              payment_id: null,
+              paid_date: null 
+            })
+            .eq('id', charge.id);
+        }
+      }
+
+      // Update balance - add back the payment amount
+      const { data: billing } = await supabase
+        .from('client_billing')
+        .select('balance')
+        .eq('client_id', clientId)
+        .maybeSingle();
+
+      if (billing) {
+        const newBalance = (billing.balance || 0) + paymentToDelete.amount;
+        await supabase
+          .from('client_billing')
+          .update({ balance: newBalance })
+          .eq('client_id', clientId);
+      }
+
+      // Delete the payment
+      const { error } = await supabase
+        .from('payments')
+        .delete()
+        .eq('id', paymentToDelete.id);
+
+      if (error) throw error;
+
+      toast.success('Pago eliminado correctamente');
+      setPaymentToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ['payments', clientId] });
+      refetchCharges();
+      refetchBilling();
+    } catch (error: any) {
+      console.error('Error deleting payment:', error);
+      toast.error('Error al eliminar el pago');
+    } finally {
+      setIsDeletingPayment(false);
     }
   };
 
@@ -1908,6 +2031,7 @@ export default function ClientDetail() {
                               <TableHead>MONTO</TableHead>
                               <TableHead>ESTATUS</TableHead>
                               <TableHead>FECHA PAGO</TableHead>
+                              <TableHead className="text-right">ACCIONES</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1935,6 +2059,28 @@ export default function ClientDetail() {
                                   {charge.paid_date 
                                     ? format(new Date(charge.paid_date), 'dd/MM/yyyy')
                                     : '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => handleEditCharge(charge)}>
+                                        <Edit className="h-4 w-4 mr-2" />
+                                        Editar
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        onClick={() => setChargeToDelete(charge)}
+                                        className="text-destructive focus:text-destructive"
+                                      >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -2014,7 +2160,7 @@ export default function ClientDetail() {
                               <TableHead>BANCO</TableHead>
                               <TableHead>RECIBO</TableHead>
                               <TableHead>NOTAS</TableHead>
-                              <TableHead></TableHead>
+                              <TableHead className="text-right">ACCIONES</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -2038,15 +2184,31 @@ export default function ClientDetail() {
                                 <TableCell className="text-muted-foreground text-sm max-w-[150px] truncate">
                                   {payment.notes || '-'}
                                 </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleShowPaymentReceipt(payment)}
-                                    title="Ver comprobante"
-                                  >
-                                    <Printer className="h-4 w-4" />
-                                  </Button>
+                                <TableCell className="text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => handleShowPaymentReceipt(payment)}>
+                                        <Printer className="h-4 w-4 mr-2" />
+                                        Ver Recibo
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleEditPayment(payment)}>
+                                        <Edit className="h-4 w-4 mr-2" />
+                                        Editar
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        onClick={() => setPaymentToDelete(payment)}
+                                        className="text-destructive focus:text-destructive"
+                                      >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -2468,6 +2630,83 @@ export default function ClientDetail() {
             />
           </PrintableDocument>
         )}
+
+        {/* Edit Charge Dialog */}
+        <EditChargeDialog
+          charge={editingCharge}
+          open={showEditChargeDialog}
+          onOpenChange={(open) => {
+            setShowEditChargeDialog(open);
+            if (!open) setEditingCharge(null);
+          }}
+          onSuccess={() => {
+            refetchCharges();
+            refetchBilling();
+          }}
+        />
+
+        {/* Delete Charge Confirmation */}
+        <AlertDialog open={!!chargeToDelete} onOpenChange={(open) => !open && setChargeToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar cargo?</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Estás seguro de eliminar el cargo "{chargeToDelete?.description}" por {chargeToDelete && formatCurrency(chargeToDelete.amount)}? 
+                Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingCharge}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteCharge}
+                disabled={isDeletingCharge}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeletingCharge && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Edit Payment Dialog */}
+        <EditPaymentDialog
+          payment={editingPayment}
+          open={showEditPaymentDialog}
+          onOpenChange={(open) => {
+            setShowEditPaymentDialog(open);
+            if (!open) setEditingPayment(null);
+          }}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['payments', clientId] });
+            refetchCharges();
+            refetchBilling();
+          }}
+        />
+
+        {/* Delete Payment Confirmation */}
+        <AlertDialog open={!!paymentToDelete} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar pago?</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Estás seguro de eliminar el pago de {paymentToDelete && formatCurrency(paymentToDelete.amount)} del {paymentToDelete && format(new Date(paymentToDelete.payment_date), 'dd/MM/yyyy')}? 
+                Los cargos asociados volverán a estado pendiente. Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingPayment}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeletePayment}
+                disabled={isDeletingPayment}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeletingPayment && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
