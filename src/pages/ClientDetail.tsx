@@ -71,6 +71,7 @@ import { AccountStatementDocument } from '@/components/documents/AccountStatemen
 import { PaymentReceiptDocument } from '@/components/documents/PaymentReceiptDocument';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
 import type { Client, ClientBilling, Equipment, Payment } from '@/types/database';
 
 type ClientWithDetails = Client & {
@@ -768,6 +769,15 @@ export default function ClientDetail() {
         }
       }
 
+      // Record deletion in history
+      await supabase.from('prospect_change_history').insert({
+        client_id: clientId,
+        field_name: `Cargo Eliminado: ${chargeToDelete.description}`,
+        old_value: `$${chargeToDelete.amount} - ${chargeToDelete.status === 'paid' ? 'Pagado' : 'Pendiente'}`,
+        new_value: null,
+        changed_by: user?.id,
+      });
+
       const { error } = await supabase
         .from('client_charges')
         .delete()
@@ -833,6 +843,15 @@ export default function ClientDetail() {
           .update({ balance: newBalance })
           .eq('client_id', clientId);
       }
+
+      // Record deletion in history
+      await supabase.from('prospect_change_history').insert({
+        client_id: clientId,
+        field_name: `Pago Eliminado`,
+        old_value: `$${paymentToDelete.amount} - ${paymentToDelete.payment_date}`,
+        new_value: null,
+        changed_by: user?.id,
+      });
 
       // Delete the payment
       const { error } = await supabase
@@ -2515,6 +2534,19 @@ export default function ClientDetail() {
                     No hay notas registradas
                   </p>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Historial de Cambios del Cliente */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <History className="h-5 w-5" />
+                  Historial de Cambios
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChangeHistoryPanel clientId={clientId} maxHeight="500px" />
               </CardContent>
             </Card>
           </TabsContent>

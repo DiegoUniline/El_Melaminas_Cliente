@@ -123,6 +123,40 @@ export function EditChargeDialog({ charge, open, onOpenChange, onSuccess }: Edit
         }
       }
 
+      // Record change history
+      const changes: { field: string; old: string; new: string }[] = [];
+      
+      if (formData.description !== charge.description) {
+        changes.push({ field: 'Descripción', old: charge.description, new: formData.description });
+      }
+      if (amount !== charge.amount) {
+        changes.push({ field: 'Monto', old: charge.amount.toString(), new: amount.toString() });
+      }
+      if (formData.status !== charge.status) {
+        const statusLabels: Record<string, string> = { pending: 'Pendiente', paid: 'Pagado' };
+        changes.push({ 
+          field: 'Estatus', 
+          old: statusLabels[charge.status] || charge.status, 
+          new: statusLabels[formData.status] || formData.status 
+        });
+      }
+      if ((formData.due_date || '') !== (charge.due_date || '')) {
+        changes.push({ field: 'Fecha Vencimiento', old: charge.due_date || '', new: formData.due_date || '' });
+      }
+
+      if (changes.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from('prospect_change_history').insert(
+          changes.map(c => ({
+            client_id: charge.client_id,
+            field_name: `Cargo: ${c.field}`,
+            old_value: c.old || null,
+            new_value: c.new || null,
+            changed_by: user?.id,
+          }))
+        );
+      }
+
       toast.success('Cargo actualizado correctamente');
       onSuccess();
       onOpenChange(false);

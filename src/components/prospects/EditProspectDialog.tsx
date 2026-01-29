@@ -31,6 +31,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, Edit } from 'lucide-react';
 import { PhoneInput } from '@/components/shared/PhoneInput';
+import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
+import { Separator } from '@/components/ui/separator';
 import { PhoneCountry } from '@/lib/phoneUtils';
 import type { Prospect } from '@/types/database';
 
@@ -619,6 +621,11 @@ export function EditProspectDialog({
                 )}
               />
             )}
+
+            <Separator />
+
+            {/* Historial de Cambios */}
+            <ChangeHistoryPanel prospectId={prospect.id} compact maxHeight="250px" />
 
             <div className="flex justify-end gap-2">
               <Button

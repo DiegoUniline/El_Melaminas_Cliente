@@ -19,6 +19,8 @@ interface ChangeHistoryItem {
   old_value: string | null;
   new_value: string | null;
   changed_at: string;
+  changed_by: string | null;
+  user_name?: string;
 }
 
 interface ProspectDetailDialogProps {
@@ -64,12 +66,34 @@ export function ProspectDetailDialog({
       try {
         const { data, error } = await supabase
           .from('prospect_change_history')
-          .select('id, field_name, old_value, new_value, changed_at')
+          .select('id, field_name, old_value, new_value, changed_at, changed_by')
           .eq('prospect_id', prospect.id)
           .order('changed_at', { ascending: false });
 
         if (error) throw error;
-        setChangeHistory(data || []);
+        
+        // Fetch user names
+        if (data && data.length > 0) {
+          const userIds = [...new Set(data.filter(d => d.changed_by).map(d => d.changed_by))];
+          
+          if (userIds.length > 0) {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('user_id, full_name')
+              .in('user_id', userIds as string[]);
+
+            const profileMap = new Map(profiles?.map(p => [p.user_id, p.full_name]) || []);
+            
+            setChangeHistory(data.map(item => ({
+              ...item,
+              user_name: item.changed_by ? profileMap.get(item.changed_by) || 'Desconocido' : undefined
+            })));
+          } else {
+            setChangeHistory(data);
+          }
+        } else {
+          setChangeHistory([]);
+        }
       } catch (error) {
         console.error('Error fetching change history:', error);
       } finally {
@@ -258,13 +282,27 @@ export function ProspectDetailDialog({
                         key={change.id}
                         className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 rounded-lg"
                       >
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-start justify-between gap-2 mb-1">
                           <span className="font-medium text-sm text-amber-800 dark:text-amber-200">
                             {change.field_name}
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(change.changed_at).toLocaleString('es-MX')}
-                          </span>
+                          <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground shrink-0">
+                            <span>
+                              {new Date(change.changed_at).toLocaleString('es-MX', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                            {change.user_name && (
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {change.user_name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 text-sm">
                           <span className="text-red-600 dark:text-red-400 line-through">

@@ -135,6 +135,44 @@ export function EditPaymentDialog({ payment, open, onOpenChange, onSuccess }: Ed
         }
       }
 
+      // Record change history
+      const changes: { field: string; old: string; new: string }[] = [];
+      
+      if (amount !== payment.amount) {
+        changes.push({ field: 'Monto', old: payment.amount.toString(), new: amount.toString() });
+      }
+      if (formData.payment_date !== payment.payment_date) {
+        changes.push({ field: 'Fecha', old: payment.payment_date, new: formData.payment_date });
+      }
+      if (formData.payment_type !== payment.payment_type) {
+        changes.push({ field: 'Método', old: payment.payment_type, new: formData.payment_type });
+      }
+      if ((formData.bank_type || '') !== (payment.bank_type || '')) {
+        changes.push({ field: 'Banco', old: payment.bank_type || '', new: formData.bank_type || '' });
+      }
+      if ((formData.receipt_number || '') !== (payment.receipt_number || '')) {
+        changes.push({ field: 'No. Recibo', old: payment.receipt_number || '', new: formData.receipt_number || '' });
+      }
+      if ((formData.payer_name || '') !== (payment.payer_name || '')) {
+        changes.push({ field: 'Pagador', old: payment.payer_name || '', new: formData.payer_name || '' });
+      }
+      if ((formData.notes || '') !== (payment.notes || '')) {
+        changes.push({ field: 'Notas', old: payment.notes || '', new: formData.notes || '' });
+      }
+
+      if (changes.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from('prospect_change_history').insert(
+          changes.map(c => ({
+            client_id: payment.client_id,
+            field_name: `Pago: ${c.field}`,
+            old_value: c.old || null,
+            new_value: c.new || null,
+            changed_by: user?.id,
+          }))
+        );
+      }
+
       toast.success('Pago actualizado correctamente');
       onSuccess();
       onOpenChange(false);
