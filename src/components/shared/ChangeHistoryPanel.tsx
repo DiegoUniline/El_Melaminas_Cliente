@@ -40,6 +40,20 @@ export function ChangeHistoryPanel({
 
       setLoading(true);
       try {
+        let linkedProspectId = prospectId;
+
+        // Si es un cliente, obtener el prospect_id vinculado para mostrar todo el historial
+        if (clientId && !prospectId) {
+          const { data: clientData } = await supabase
+            .from('clients')
+            .select('prospect_id')
+            .eq('id', clientId)
+            .maybeSingle();
+          
+          linkedProspectId = clientData?.prospect_id || null;
+        }
+
+        // Construir query para obtener historial del cliente Y del prospecto vinculado
         let query = supabase
           .from('prospect_change_history')
           .select(`
@@ -52,9 +66,14 @@ export function ChangeHistoryPanel({
           `)
           .order('changed_at', { ascending: false });
 
-        if (clientId) {
+        if (clientId && linkedProspectId) {
+          // Cliente con prospecto vinculado: traer ambos historiales
+          query = query.or(`client_id.eq.${clientId},prospect_id.eq.${linkedProspectId}`);
+        } else if (clientId) {
+          // Solo cliente sin prospecto
           query = query.eq('client_id', clientId);
         } else if (prospectId) {
+          // Solo prospecto
           query = query.eq('prospect_id', prospectId);
         }
 
