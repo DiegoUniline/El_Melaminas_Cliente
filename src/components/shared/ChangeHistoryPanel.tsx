@@ -117,6 +117,7 @@ export function ChangeHistoryPanel({
 
   const formatFieldName = (fieldName: string): string => {
     const fieldLabels: Record<string, string> = {
+      // Datos del cliente/prospecto
       first_name: 'Nombre',
       last_name_paterno: 'Apellido Paterno',
       last_name_materno: 'Apellido Materno',
@@ -142,6 +143,21 @@ export function ChangeHistoryPanel({
       notes: 'Notas',
       cancellation_reason: 'Motivo Cancelación',
       status: 'Estatus',
+      // Datos del equipo
+      'Antena: Marca': 'Antena: Marca',
+      'Antena: Modelo': 'Antena: Modelo',
+      'Antena: Serie': 'Antena: Serie',
+      'Antena: MAC': 'Antena: MAC',
+      'Antena: IP': 'Antena: IP',
+      'Antena: SSID': 'Antena: SSID',
+      'Router: Marca': 'Router: Marca',
+      'Router: Modelo': 'Router: Modelo',
+      'Router: Serie': 'Router: Serie',
+      'Router: MAC': 'Router: MAC',
+      'Router: IP': 'Router: IP',
+      'Router: Nombre Red': 'Router: Nombre Red',
+      'Router: Contraseña': 'Router: Contraseña',
+      'Instalador': 'Instalador',
     };
     return fieldLabels[fieldName] || fieldName;
   };

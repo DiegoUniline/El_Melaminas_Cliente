@@ -924,8 +924,8 @@ export default function ClientDetail() {
     
     setIsSaving(true);
     try {
-      // Track changes for history
-      const clientChanges: { field: string; oldValue: string; newValue: string }[] = [];
+      // Track changes for history - client fields
+      const allChanges: { field: string; oldValue: string; newValue: string }[] = [];
       
       const clientFields = [
         'first_name', 'last_name_paterno', 'last_name_materno', 
@@ -935,13 +935,64 @@ export default function ClientDetail() {
         'neighborhood', 'city', 'postal_code'
       ] as const;
       
+      // Field labels for better readability in history
+      const fieldLabels: Record<string, string> = {
+        first_name: 'Nombre',
+        last_name_paterno: 'Apellido Paterno',
+        last_name_materno: 'Apellido Materno',
+        phone1: 'Teléfono 1',
+        phone1_country: 'País Tel. 1',
+        phone2: 'Teléfono 2',
+        phone2_country: 'País Tel. 2',
+        phone3: 'Teléfono 3',
+        phone3_country: 'País Tel. 3',
+        street: 'Calle',
+        exterior_number: 'No. Exterior',
+        interior_number: 'No. Interior',
+        neighborhood: 'Colonia',
+        city: 'Ciudad',
+        postal_code: 'Código Postal',
+        antenna_brand: 'Antena: Marca',
+        antenna_model: 'Antena: Modelo',
+        antenna_serial: 'Antena: Serie',
+        antenna_mac: 'Antena: MAC',
+        antenna_ip: 'Antena: IP',
+        antenna_ssid: 'Antena: SSID',
+        router_brand: 'Router: Marca',
+        router_model: 'Router: Modelo',
+        router_serial: 'Router: Serie',
+        router_mac: 'Router: MAC',
+        router_ip: 'Router: IP',
+        router_network_name: 'Router: Nombre Red',
+        router_password: 'Router: Contraseña',
+        installer_name: 'Instalador',
+      };
+      
       clientFields.forEach(field => {
         const oldVal = (client as any)[field] || '';
         const newVal = (editedClient as any)[field] || '';
         if (oldVal !== newVal) {
-          clientChanges.push({ field, oldValue: oldVal, newValue: newVal });
+          allChanges.push({ field: fieldLabels[field] || field, oldValue: oldVal, newValue: newVal });
         }
       });
+
+      // Track equipment changes
+      if (equipment) {
+        const equipmentFields = [
+          'antenna_brand', 'antenna_model', 'antenna_serial', 'antenna_mac', 
+          'antenna_ip', 'antenna_ssid', 'router_brand', 'router_model', 
+          'router_serial', 'router_mac', 'router_ip', 'router_network_name', 
+          'router_password', 'installer_name'
+        ] as const;
+        
+        equipmentFields.forEach(field => {
+          const oldVal = equipment[field] || '';
+          const newVal = (editedEquipment as any)[field] || '';
+          if (oldVal !== newVal) {
+            allChanges.push({ field: fieldLabels[field] || field, oldValue: oldVal, newValue: newVal });
+          }
+        });
+      }
 
       // Update client
       const { error: clientError } = await supabase
@@ -992,9 +1043,9 @@ export default function ClientDetail() {
         if (equipError) throw equipError;
       }
 
-      // Save change history
-      if (clientChanges.length > 0) {
-        const historyRecords = clientChanges.map(c => ({
+      // Save all changes to history (client + equipment)
+      if (allChanges.length > 0) {
+        const historyRecords = allChanges.map(c => ({
           client_id: clientId,
           field_name: c.field,
           old_value: c.oldValue || null,
@@ -1005,7 +1056,7 @@ export default function ClientDetail() {
         await supabase.from('prospect_change_history').insert(historyRecords);
       }
 
-      toast.success(`Cliente actualizado (${clientChanges.length} campo(s) modificado(s))`);
+      toast.success(`Cliente actualizado (${allChanges.length} campo(s) modificado(s))`);
       setIsEditing(false);
       refetchClient();
       queryClient.invalidateQueries({ queryKey: ['clients'] });
