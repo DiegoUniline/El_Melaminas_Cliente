@@ -288,9 +288,11 @@ export function FinalizeProspectDialog({
 
   // Calculate totals
   const totalAdditionalCharges = selectedCharges.reduce((sum, c) => sum + c.amount, 0);
+  const monthlyFee = form.watch('monthly_fee') || 0;
   const totalInitialBalance = 
     (form.watch('installation_cost') || 0) + 
     (form.watch('prorated_amount') || 0) + 
+    monthlyFee + // Primera mensualidad (pago por adelantado)
     totalAdditionalCharges;
 
   if (!prospect) return null;
@@ -517,6 +519,23 @@ export function FinalizeProspectDialog({
             client_id: clientData.id,
             description: 'Prorrateo inicial',
             amount: data.prorated_amount,
+            status: 'pending',
+            due_date: dueDate,
+            created_by: user?.id,
+          });
+        }
+
+        // Primera mensualidad (pago por adelantado)
+        if (data.monthly_fee > 0) {
+          // Calcular el mes que cubre la primera mensualidad
+          const firstBillingMonth = firstBillingDate.getUTCMonth();
+          const firstBillingYear = firstBillingDate.getUTCFullYear();
+          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+          
+          chargesToCreate.push({
+            client_id: clientData.id,
+            description: `Mensualidad ${monthNames[firstBillingMonth]} ${firstBillingYear}`,
+            amount: data.monthly_fee,
             status: 'pending',
             due_date: dueDate,
             created_by: user?.id,
@@ -1212,6 +1231,10 @@ export function FinalizeProspectDialog({
                             onChange={(e) => form.setValue('prorated_amount', parseFloat(e.target.value) || 0)}
                             className="w-28 h-7 text-sm text-right"
                           />
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Primera Mensualidad:</span>
+                          <span className="font-medium">{formatCurrency(form.watch('monthly_fee') || 0)}</span>
                         </div>
                         {selectedCharges.map((charge, i) => (
                           <div key={i} className="flex justify-between items-center">
