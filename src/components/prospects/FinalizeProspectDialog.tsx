@@ -581,30 +581,30 @@ export function FinalizeProspectDialog({
         </div>
 
         <Form {...form}>
-          <form 
-            onSubmit={form.handleSubmit(handleFormSubmit)} 
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-                e.preventDefault();
-              }
-            }}
-            className="space-y-4"
-          >
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
-                <TabsTrigger value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
-                <TabsTrigger value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
-                <TabsTrigger value="billing" className="text-xs sm:text-sm flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 hidden sm:inline" />
-                  Facturación
-                </TabsTrigger>
-                <TabsTrigger value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
-                  <ClipboardList className="h-3 w-3 hidden sm:inline" />
-                  Resumen
-                </TabsTrigger>
-              </TabsList>
-
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
+              <TabsTrigger value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
+              <TabsTrigger value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
+              <TabsTrigger value="billing" className="text-xs sm:text-sm flex items-center gap-1">
+                <DollarSign className="h-3 w-3 hidden sm:inline" />
+                Facturación
+              </TabsTrigger>
+              <TabsTrigger value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
+                <ClipboardList className="h-3 w-3 hidden sm:inline" />
+                Resumen
+              </TabsTrigger>
+            </TabsList>
+            
+            <form 
+              onSubmit={form.handleSubmit(handleFormSubmit)} 
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+                  e.preventDefault();
+                }
+              }}
+              className="space-y-4"
+            >
               {/* Personal Tab */}
               <TabsContent value="personal" className="space-y-4 pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1238,9 +1238,8 @@ export function FinalizeProspectDialog({
                   </Card>
                 </div>
               </TabsContent>
-            </Tabs>
 
-            <DialogFooter className="pt-4 flex-col sm:flex-row gap-2">
+              <DialogFooter className="pt-4 flex-col sm:flex-row gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -1282,7 +1281,8 @@ export function FinalizeProspectDialog({
                 </Button>
               )}
             </DialogFooter>
-          </form>
+            </form>
+          </Tabs>
         </Form>
       </DialogContent>
 
