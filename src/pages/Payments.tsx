@@ -12,6 +12,7 @@ import { exportToExcel } from '@/lib/exportToExcel';
 import { Download, Eye, CreditCard, DollarSign, TrendingUp, Calendar } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { formatCurrency } from '@/lib/billing';
 import type { Payment, Client } from '@/types/database';
 
 type PaymentWithClient = Payment & {
@@ -139,7 +140,7 @@ export default function Payments() {
       header: 'Monto',
       render: (payment: PaymentWithClient) => (
         <span className="font-bold text-green-600">
-          ${payment.amount.toLocaleString()}
+          {formatCurrency(payment.amount)}
         </span>
       ),
     },
@@ -195,7 +196,7 @@ export default function Payments() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                ${totalMonthly.toLocaleString()}
+                {formatCurrency(totalMonthly)}
               </div>
               <p className="text-xs text-muted-foreground">
                 {format(now, 'MMMM yyyy', { locale: es })}

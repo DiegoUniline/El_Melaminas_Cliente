@@ -225,7 +225,7 @@ export default function Dashboard() {
                       className="text-xs"
                     />
                     <Tooltip 
-                      formatter={(value: number) => [`$${value.toLocaleString()}`, 'Ingresos']}
+                      formatter={(value: number) => [formatCurrency(value), 'Ingresos']}
                       contentStyle={{ 
                         backgroundColor: 'hsl(var(--background))', 
                         border: '1px solid hsl(var(--border))',
