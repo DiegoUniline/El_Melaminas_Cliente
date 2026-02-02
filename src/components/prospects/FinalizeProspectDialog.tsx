@@ -497,6 +497,8 @@ export function FinalizeProspectDialog({
         }
 
         // 6. Create initial charges in client_charges
+        // La fecha de vencimiento es la primera fecha de corte
+        const dueDate = firstBillingDate.toISOString().split('T')[0];
         const chargesToCreate: any[] = [];
 
         if (data.installation_cost > 0) {
@@ -505,6 +507,7 @@ export function FinalizeProspectDialog({
             description: 'Costo de instalación',
             amount: data.installation_cost,
             status: 'pending',
+            due_date: dueDate,
             created_by: user?.id,
           });
         }
@@ -515,6 +518,7 @@ export function FinalizeProspectDialog({
             description: 'Prorrateo inicial',
             amount: data.prorated_amount,
             status: 'pending',
+            due_date: dueDate,
             created_by: user?.id,
           });
         }
@@ -527,6 +531,7 @@ export function FinalizeProspectDialog({
             description: charge.name,
             amount: charge.amount,
             status: 'pending',
+            due_date: dueDate,
             created_by: user?.id,
           });
         }
