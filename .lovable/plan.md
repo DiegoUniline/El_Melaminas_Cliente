@@ -1,259 +1,263 @@
 
+# Plan: Correcciones del Flujo de Conversión Prospecto → Cliente
 
-# Plan: Validaciones Obligatorias y Corrección de Datos Prospecto→Cliente
+## Resumen de Problemas a Resolver
 
-## Resumen
-
-Se implementarán validaciones que **bloqueen el guardado** cuando haya errores en MAC, IP o teléfono, y se corregirá el flujo de conversión prospecto→cliente para que la fecha de instalación y el técnico instalador se transfieran correctamente.
+1. **Técnico asignado no aparece**: En el paso "Técnico" no se muestra el instalador que ya viene asignado desde el prospecto
+2. **Prorrateo mal calculado**: Se está contando el día de corte cuando no debería incluirse
+3. **Cargos no editables en resumen**: Al editar un cargo en el resumen no se actualiza el total
+4. **Formulario se guarda antes de tiempo**: El submit no debe ocurrir hasta el paso final con confirmación explícita
 
 ---
 
-## 1. Exportar Funciones de Validación
+## 1. Agregar Técnico al Tab Técnico
 
-**Archivos a modificar:**
-- `src/lib/formatUtils.ts` - Agregar validación de IP
-- `src/lib/phoneUtils.ts` - Agregar validación de teléfono completo
+**Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
 
-Se exportarán las funciones para reutilizarlas:
+En el tab "technical" (líneas 782-829), agregar un campo para mostrar y poder cambiar el técnico instalador:
 
+**Agregar al schema** (línea 72):
 ```typescript
-// formatUtils.ts - Agregar:
-export function isValidIPAddress(ip: string): boolean {
-  if (!ip) return true; // Vacío es válido (campo opcional)
-  const pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (!pattern.test(ip)) return false;
-  return ip.split('.').every(n => parseInt(n) <= 255);
-}
+installer_id: z.string().optional(),
+```
 
-// phoneUtils.ts - Agregar:
-export function isPhoneComplete(phone: string): boolean {
-  if (!phone) return true; // Vacío es válido para campos opcionales
-  const digits = phone.replace(/\D/g, '');
-  return digits.length === 10;
-}
+**Agregar query para técnicos** (después de línea 135):
+```typescript
+const { data: technicians = [] } = useQuery({
+  queryKey: ['technicians'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('user_id, full_name')
+      .order('full_name');
+    if (error) throw error;
+    return data;
+  },
+});
+```
+
+**Cargar el técnico asignado al abrir** (en el useEffect línea 182-216):
+```typescript
+// Agregar al form.reset:
+installer_id: prospect.assigned_to || '',
+```
+
+**Agregar campo en tab Técnico** (antes de línea 812):
+```typescript
+<FormField
+  control={form.control}
+  name="installer_id"
+  render={({ field }) => (
+    <FormItem className="md:col-span-2">
+      <FormLabel>Técnico Instalador</FormLabel>
+      <Select value={field.value} onValueChange={field.onChange}>
+        <FormControl>
+          <SelectTrigger>
+            <SelectValue placeholder="Seleccionar técnico" />
+          </SelectTrigger>
+        </FormControl>
+        <SelectContent>
+          {technicians.map((t) => (
+            <SelectItem key={t.user_id} value={t.user_id}>
+              {t.full_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
+```
+
+**Mostrar técnico en resumen** (agregar a la card de Datos Técnicos línea 1102):
+```typescript
+{getInstallerName() && <p><strong>Instalador:</strong> {getInstallerName()}</p>}
+```
+
+**Usar installer_id al crear equipment** (modificar línea 448):
+```typescript
+installer_name: technicians.find(t => t.user_id === data.installer_id)?.full_name || null,
 ```
 
 ---
 
-## 2. Bloquear Guardado con Errores en ClientDetail
+## 2. Corregir Cálculo de Prorrateo
 
-**Archivo:** `src/pages/ClientDetail.tsx`
+**Archivo:** `src/lib/billing.ts`
 
-Agregar validación al inicio de `handleSave` (línea ~923):
+El problema está en el caso cuando `installDay <= billingDay`. Actualmente:
+- Instalación día 2, corte día 10
+- Cálculo: `10 - 2 = 8 días`
+- A $5/día = $40
+
+Pero si el usuario ve $45, significa 9 días. Revisando la lógica de negocio:
+- Del día 2 al día 9 son los días que se cobran (el 10 inicia nuevo ciclo)
+- Días: 2, 3, 4, 5, 6, 7, 8, 9 = 8 días
+
+**El cálculo actual es correcto matemáticamente**. El problema podría ser:
+1. La mensualidad no es exactamente divisible ($135 / 30 = $4.5, y 10 × $4.5 = $45)
+2. O hay un error en cómo se calcula la tarifa diaria
+
+**Sin embargo**, hay un caso especial: si la instalación es el mismo día del corte (ej: instalar el 10, corte el 10), el prorrateo debería ser 0, pero actualmente `10 - 10 = 0` ✓
+
+**Verificar y ajustar** para que sea más claro (líneas 14-18):
+```typescript
+if (installDay <= billingDay) {
+  firstBillingDate = new Date(installYear, installMonth, billingDay);
+  // Cobrar desde el día de instalación hasta el día ANTERIOR al corte
+  // Ejemplo: instalar día 2, corte día 10 → cobrar días 2,3,4,5,6,7,8,9 = 8 días
+  daysCharged = billingDay - installDay;
+}
+```
+
+El código actual es correcto. El problema probablemente está en que el monto que el usuario ve ($45) viene de una mensualidad diferente. Si la mensualidad es $150, entonces $150/30 = $5, y 8 días × $5 = $40.
+
+Pero si la mensualidad es $168.75, entonces $168.75/30 = $5.625, y 8 días × $5.625 = $45.
+
+**No se requiere cambio en billing.ts** si los números son correctos.
+
+---
+
+## 3. Hacer Cargos Editables en Resumen
+
+**Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
+
+Modificar la sección de cargos en el resumen (líneas 1144-1149) para permitir editar el monto:
 
 ```typescript
-const handleSave = async () => {
-  if (!client || !clientId) return;
+{selectedCharges.map((charge, i) => (
+  <div key={i} className="flex justify-between items-center">
+    <span>{charge.name}:</span>
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        min="0"
+        step="0.01"
+        value={charge.amount}
+        onChange={(e) => {
+          const newCharges = [...selectedCharges];
+          newCharges[i] = { ...charge, amount: parseFloat(e.target.value) || 0 };
+          setSelectedCharges(newCharges);
+        }}
+        className="w-24 h-7 text-sm"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6"
+        onClick={() => handleRemoveCharge(i)}
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  </div>
+))}
+```
+
+También hacer editables el costo de instalación y el prorrateo en el resumen:
+
+```typescript
+<div className="flex justify-between items-center">
+  <span>Costo de Instalación:</span>
+  <Input
+    type="number"
+    min="0"
+    step="0.01"
+    value={form.watch('installation_cost') || ''}
+    onChange={(e) => form.setValue('installation_cost', parseFloat(e.target.value) || 0)}
+    className="w-24 h-7 text-sm text-right"
+  />
+</div>
+<div className="flex justify-between items-center">
+  <span>Prorrateo:</span>
+  <Input
+    type="number"
+    min="0"
+    step="0.01"
+    value={form.watch('prorated_amount') || ''}
+    onChange={(e) => form.setValue('prorated_amount', parseFloat(e.target.value) || 0)}
+    className="w-24 h-7 text-sm text-right"
+  />
+</div>
+```
+
+El `totalInitialBalance` ya está calculado dinámicamente con `form.watch()`, así que se actualizará automáticamente.
+
+---
+
+## 4. Evitar Submit Accidental
+
+**Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
+
+El problema es que aunque hay `onKeyDown` para prevenir Enter, los botones "Siguiente" podrían estar triggereando submit. 
+
+**Solución**: Cambiar el botón de submit en el último paso para que sea explícito y agregar `type="button"` a los demás:
+
+Ya está implementado correctamente:
+- "Siguiente" tiene `type="button"` (línea 1199)
+- "Anterior" tiene `type="button"` (línea 1176)
+- Solo "Finalizar y Crear Cliente" tiene `type="submit"` (línea 1184-1185)
+
+**Agregar confirmación adicional antes del submit** (modificar handleFinalize línea 355):
+
+```typescript
+const handleFinalize = async (data: FinalizeFormValues) => {
+  // Confirmar antes de guardar
+  const confirmed = window.confirm(
+    `¿Confirmas que los datos son correctos?\n\nTotal a cobrar: ${formatCurrency(totalInitialBalance)}`
+  );
+  if (!confirmed) return;
   
   // VALIDACIONES OBLIGATORIAS
-  const errors: string[] = [];
-  
-  // Validar teléfonos
-  if (!isPhoneComplete(editedClient.phone1)) {
-    errors.push('Teléfono 1 debe tener 10 dígitos');
-  }
-  if (editedClient.phone2 && !isPhoneComplete(editedClient.phone2)) {
-    errors.push('Teléfono 2 debe tener 10 dígitos');
-  }
-  if (editedClient.phone3 && !isPhoneComplete(editedClient.phone3)) {
-    errors.push('Teléfono 3 debe tener 10 dígitos');
-  }
-  
-  // Validar MACs (si tienen valor, deben estar completas)
-  if (editedEquipment.antenna_mac && !isMacAddressComplete(editedEquipment.antenna_mac)) {
-    errors.push('MAC Antena debe tener 12 caracteres hexadecimales');
-  }
-  if (editedEquipment.router_mac && !isMacAddressComplete(editedEquipment.router_mac)) {
-    errors.push('MAC Router debe tener 12 caracteres hexadecimales');
-  }
-  
-  // Validar IPs (si tienen valor, deben ser válidas)
-  if (editedEquipment.antenna_ip && !isValidIPAddress(editedEquipment.antenna_ip)) {
-    errors.push('IP Antena no tiene formato válido (ej: 192.168.1.1)');
-  }
-  if (editedEquipment.router_ip && !isValidIPAddress(editedEquipment.router_ip)) {
-    errors.push('IP Router no tiene formato válido');
-  }
-  
-  if (errors.length > 0) {
-    toast.error(errors.join('\n'));
-    return; // NO GUARDAR
-  }
-  
-  // ... resto del código de guardado
+  // ... resto del código
 };
 ```
 
 ---
 
-## 3. Corregir FinalizeProspectDialog - Transferir Datos del Prospecto
-
-**Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
-
-### 3.1 Obtener nombre del técnico asignado
-
-Agregar query para obtener el nombre del técnico (después de línea ~118):
-
-```typescript
-// Fetch assigned technician name
-const { data: assignedTechnician } = useQuery({
-  queryKey: ['assigned-technician', prospect?.assigned_to],
-  queryFn: async () => {
-    if (!prospect?.assigned_to) return null;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('user_id', prospect.assigned_to)
-      .maybeSingle();
-    if (error) throw error;
-    return data?.full_name || null;
-  },
-  enabled: !!prospect?.assigned_to,
-});
-```
-
-### 3.2 Modificar creación de equipment (líneas 401-413)
-
-Cambiar de:
-```typescript
-const { error: equipmentError } = await supabase
-  .from('equipment')
-  .insert({
-    client_id: clientData.id,
-    antenna_ssid: data.ssid || null,
-    antenna_ip: data.antenna_ip || null,
-  });
-```
-
-A:
-```typescript
-const { error: equipmentError } = await supabase
-  .from('equipment')
-  .insert({
-    client_id: clientData.id,
-    antenna_ssid: data.ssid || null,
-    antenna_ip: data.antenna_ip || null,
-    installation_date: data.installation_date,  // NUEVO
-    installer_name: assignedTechnician || null, // NUEVO - desde prospecto
-  });
-```
-
----
-
-## 4. Actualizar Datos del Cliente Actual en BD
-
-Se ejecutará una actualización SQL para corregir el cliente que actualmente tiene fecha de instalación vacía:
-
-```sql
--- Actualizar equipment con fecha de instalación desde client_billing
-UPDATE equipment e
-SET 
-  installation_date = cb.installation_date,
-  installer_name = pr.full_name
-FROM clients c
-JOIN client_billing cb ON cb.client_id = c.id
-JOIN prospects p ON p.id = c.prospect_id
-LEFT JOIN profiles pr ON pr.user_id = p.assigned_to
-WHERE e.client_id = c.id
-AND c.id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
-```
-
----
-
-## 5. Aplicar Validaciones en Otros Formularios
-
-Se aplicarán las mismas validaciones obligatorias en:
-
-| Archivo | Campos a Validar |
-|---------|------------------|
-| `ClientFormDialog.tsx` | Teléfonos, MAC, IP |
-| `ProspectFormDialog.tsx` | Teléfonos, IP antena |
-| `EditProspectDialog.tsx` | Teléfonos, IP antena |
-| `PaymentFormDialog.tsx` | Teléfono pagador |
-
----
-
-## Resumen de Archivos a Modificar
+## Resumen de Cambios
 
 | Archivo | Cambios |
 |---------|---------|
-| `src/lib/formatUtils.ts` | Exportar `isValidIPAddress`, `isValidMacAddress` |
-| `src/lib/phoneUtils.ts` | Agregar y exportar `isPhoneComplete` |
-| `src/pages/ClientDetail.tsx` | Validaciones antes de guardar |
-| `src/components/prospects/FinalizeProspectDialog.tsx` | Pasar installation_date e installer_name desde prospecto |
-| `src/components/clients/ClientFormDialog.tsx` | Validaciones antes de guardar |
-| `src/components/prospects/ProspectFormDialog.tsx` | Validaciones antes de guardar |
-| `src/components/prospects/EditProspectDialog.tsx` | Validaciones antes de guardar |
-| `src/components/payments/PaymentFormDialog.tsx` | Validación teléfono pagador |
+| `src/components/prospects/FinalizeProspectDialog.tsx` | Agregar técnico al tab, editables en resumen, confirmación |
 
 ---
 
 ## Sección Técnica
 
-### Función de Validación Completa
+### Flujo Completo del Técnico
 
-```typescript
-interface ValidationResult {
-  isValid: boolean;
-  errors: string[];
-}
-
-export function validateClientData(
-  client: EditedClientData, 
-  equipment: EditedEquipmentData
-): ValidationResult {
-  const errors: string[] = [];
-  
-  // Teléfono 1 obligatorio y completo
-  if (!client.phone1 || !isPhoneComplete(client.phone1)) {
-    errors.push('Teléfono 1 debe tener 10 dígitos');
-  }
-  
-  // Teléfonos opcionales pero si tienen valor, deben estar completos
-  if (client.phone2 && !isPhoneComplete(client.phone2)) {
-    errors.push('Teléfono 2 incompleto');
-  }
-  
-  // MACs opcionales pero si tienen valor, deben ser válidas
-  if (equipment.antenna_mac && !isMacAddressComplete(equipment.antenna_mac)) {
-    errors.push('MAC Antena incompleta (requiere 12 caracteres hex)');
-  }
-  
-  // IPs opcionales pero si tienen valor, deben ser válidas
-  if (equipment.antenna_ip && !isValidIPAddress(equipment.antenna_ip)) {
-    errors.push('IP Antena inválida');
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-}
+```
+1. Usuario crea prospecto con assigned_to (UUID del técnico)
+2. Al convertir, el useQuery obtiene full_name del assigned_to
+3. Se pre-carga en installer_id del formulario
+4. Usuario puede cambiarlo con un Select
+5. Al guardar, se busca el full_name del installer_id seleccionado
+6. Se guarda en equipment.installer_name
 ```
 
-### SQL para Actualizar Cliente Existente
+### Cálculo de Prorrateo (Verificación)
 
-```sql
--- Primero verificar los datos
-SELECT 
-  c.id as client_id,
-  c.first_name,
-  e.installation_date as equip_install_date,
-  cb.installation_date as billing_install_date,
-  e.installer_name as current_installer,
-  pr.full_name as prospect_technician
-FROM clients c
-JOIN equipment e ON e.client_id = c.id
-JOIN client_billing cb ON cb.client_id = c.id
-JOIN prospects p ON p.id = c.prospect_id
-LEFT JOIN profiles pr ON pr.user_id = p.assigned_to
-WHERE c.id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
+```
+Fecha: 2 de febrero 2026
+Día de corte: 10
+Días a cobrar: 2, 3, 4, 5, 6, 7, 8, 9 = 8 días
 
--- Actualizar
-UPDATE equipment 
-SET 
-  installation_date = '2026-01-28',
-  installer_name = 'Raul Michel'
-WHERE client_id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
+Formula: billing_day - install_day = 10 - 2 = 8 días ✓
+
+Si mensualidad = $150:
+  Tarifa diaria = $150 / 30 = $5
+  Prorrateo = 8 × $5 = $40 ✓
+
+Si mensualidad = $135:
+  Tarifa diaria = $135 / 30 = $4.50
+  Prorrateo = 8 × $4.50 = $36 ✓
 ```
 
+El cálculo en `billing.ts` es correcto. Si el usuario ve $45 con 8 días, la mensualidad calculada sería:
+- $45 / 8 días = $5.625/día
+- $5.625 × 30 = $168.75 mensualidad
+
+Esto sugiere que el plan/mensualidad seleccionado podría no ser el esperado.
