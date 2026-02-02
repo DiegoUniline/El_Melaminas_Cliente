@@ -2188,7 +2188,7 @@ export default function ClientDetail() {
                               <TableHead>DESCRIPCIÓN</TableHead>
                               <TableHead>MONTO</TableHead>
                               <TableHead>ESTATUS</TableHead>
-                              <TableHead>FECHA PAGO</TableHead>
+                              <TableHead>VENCIMIENTO</TableHead>
                               <TableHead className="text-right">ACCIONES</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -2214,8 +2214,8 @@ export default function ClientDetail() {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-muted-foreground">
-                                  {charge.paid_date 
-                                    ? format(new Date(charge.paid_date), 'dd/MM/yyyy')
+                                  {charge.due_date 
+                                    ? format(new Date(charge.due_date + 'T00:00:00'), 'dd/MM/yyyy')
                                     : '-'}
                                 </TableCell>
                                 <TableCell className="text-right">
