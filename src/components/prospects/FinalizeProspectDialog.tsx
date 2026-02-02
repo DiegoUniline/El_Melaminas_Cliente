@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -41,6 +41,7 @@ import { PhoneInput } from '@/components/shared/PhoneInput';
 import { type PhoneCountry, formatPhoneDisplay, isPhoneComplete } from '@/lib/phoneUtils';
 import { isValidIPAddress } from '@/lib/formatUtils';
 import { formatCurrency, calculateProration } from '@/lib/billing';
+import { ConfirmFinalizeDialog } from './ConfirmFinalizeDialog';
 
 interface SelectedCharge {
   catalog_id: string;
@@ -103,6 +104,8 @@ export function FinalizeProspectDialog({
   const [selectedCharges, setSelectedCharges] = useState<SelectedCharge[]>([]);
   const [selectedChargeId, setSelectedChargeId] = useState('');
   const [chargeAmount, setChargeAmount] = useState('');
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const pendingDataRef = useRef<FinalizeFormValues | null>(null);
   const { user } = useAuth();
 
   // Fetch service plans
@@ -352,7 +355,8 @@ export function FinalizeProspectDialog({
     return changes.length;
   };
 
-  const handleFinalize = async (data: FinalizeFormValues) => {
+  // Handle form submit - show confirmation dialog
+  const handleFormSubmit = (data: FinalizeFormValues) => {
     // VALIDACIONES OBLIGATORIAS
     const errors: string[] = [];
     
@@ -374,11 +378,15 @@ export function FinalizeProspectDialog({
       return;
     }
 
-    // Confirmar antes de guardar
-    const confirmed = window.confirm(
-      `¿Confirmas que los datos son correctos?\n\nTotal a cobrar: ${formatCurrency(totalInitialBalance)}`
-    );
-    if (!confirmed) return;
+    // Store data and show confirmation dialog
+    pendingDataRef.current = data;
+    setShowConfirmDialog(true);
+  };
+
+  // Actual finalization after confirmation
+  const handleConfirmedFinalize = async () => {
+    const data = pendingDataRef.current;
+    if (!data) return;
     
     setIsLoading(true);
     try {
@@ -537,6 +545,8 @@ export function FinalizeProspectDialog({
         : 'Prospecto finalizado y cliente creado correctamente';
       
       toast.success(message);
+      setShowConfirmDialog(false);
+      pendingDataRef.current = null;
       onOpenChange(false);
       onSuccess();
     } catch (error) {
@@ -572,7 +582,7 @@ export function FinalizeProspectDialog({
 
         <Form {...form}>
           <form 
-            onSubmit={form.handleSubmit(handleFinalize)} 
+            onSubmit={form.handleSubmit(handleFormSubmit)} 
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
                 e.preventDefault();
@@ -1275,6 +1285,19 @@ export function FinalizeProspectDialog({
           </form>
         </Form>
       </DialogContent>
+
+      <ConfirmFinalizeDialog
+        open={showConfirmDialog}
+        onOpenChange={(open) => {
+          setShowConfirmDialog(open);
+          if (!open) {
+            pendingDataRef.current = null;
+          }
+        }}
+        onConfirm={handleConfirmedFinalize}
+        totalAmount={totalInitialBalance}
+        isLoading={isLoading}
+      />
     </Dialog>
   );
 }
