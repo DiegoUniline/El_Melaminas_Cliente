@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -20,6 +21,13 @@ import {
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -31,6 +39,7 @@ import type { Client, ClientBilling, Equipment } from '@/types/database';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { PhoneCountry } from '@/lib/phoneUtils';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
+import { IpAddressInput } from '@/components/shared/IpAddressInput';
 
 type ClientWithDetails = Client & {
   client_billing: ClientBilling | null;
@@ -99,6 +108,19 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
     firstBillingDate: Date;
     totalInitial: number;
   } | null>(null);
+
+  // Fetch employees for installer selector
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .order('full_name');
+      if (error) throw error;
+      return data;
+    },
+  });
   
   const [documents, setDocuments] = useState<{
     ine_subscriber_front: File | null;
@@ -956,7 +978,10 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                           <FormItem>
                             <FormLabel>IP</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="192.168.1.1" />
+                              <IpAddressInput
+                                value={field.value || ''}
+                                onChange={field.onChange}
+                              />
                             </FormControl>
                           </FormItem>
                         )}
@@ -1049,7 +1074,10 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                           <FormItem>
                             <FormLabel>IP</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="192.168.1.2" />
+                              <IpAddressInput
+                                value={field.value || ''}
+                                onChange={field.onChange}
+                              />
                             </FormControl>
                           </FormItem>
                         )}
@@ -1083,10 +1111,27 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                         name="installer_name"
                         render={({ field }) => (
                           <FormItem className="col-span-2">
-                            <FormLabel>Nombre del Instalador</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
+                            <FormLabel>Instalador</FormLabel>
+                            <Select
+                              value={employees.find(e => e.full_name === field.value)?.user_id || ''}
+                              onValueChange={(v) => {
+                                const emp = employees.find(e => e.user_id === v);
+                                field.onChange(emp?.full_name || '');
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Seleccionar instalador" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {employees.map((emp) => (
+                                  <SelectItem key={emp.user_id} value={emp.user_id}>
+                                    {emp.full_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </FormItem>
                         )}
                       />

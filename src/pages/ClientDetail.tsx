@@ -58,6 +58,7 @@ import { formatCurrency } from '@/lib/billing';
 import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry } from '@/lib/phoneUtils';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
+import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { ChangePlanDialog } from '@/components/clients/ChangePlanDialog';
 import { ChangeBillingDayDialog } from '@/components/clients/ChangeBillingDayDialog';
 import { ChangeEquipmentDialog } from '@/components/clients/ChangeEquipmentDialog';
@@ -1567,9 +1568,9 @@ export default function ClientDetail() {
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
                           <Label className="text-xs">IP</Label>
-                          <Input
+                          <IpAddressInput
                             value={editedEquipment.antenna_ip || ''}
-                            onChange={(e) => setEditedEquipment({ ...editedEquipment, antenna_ip: e.target.value })}
+                            onChange={(v) => setEditedEquipment({ ...editedEquipment, antenna_ip: v })}
                           />
                         </div>
                         <div className="space-y-1">
@@ -1667,9 +1668,9 @@ export default function ClientDetail() {
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">IP</Label>
-                          <Input
+                          <IpAddressInput
                             value={editedEquipment.router_ip || ''}
-                            onChange={(e) => setEditedEquipment({ ...editedEquipment, router_ip: e.target.value })}
+                            onChange={(v) => setEditedEquipment({ ...editedEquipment, router_ip: v })}
                           />
                         </div>
                       </div>
@@ -1726,10 +1727,24 @@ export default function ClientDetail() {
                     <div className="flex items-center gap-6">
                       <div className="space-y-1 flex-1">
                         <Label className="text-xs">Instalador</Label>
-                        <Input
-                          value={editedEquipment.installer_name || ''}
-                          onChange={(e) => setEditedEquipment({ ...editedEquipment, installer_name: e.target.value })}
-                        />
+                        <Select
+                          value={employees.find(e => e.full_name === editedEquipment.installer_name)?.user_id || ''}
+                          onValueChange={(v) => {
+                            const emp = employees.find(e => e.user_id === v);
+                            setEditedEquipment({ ...editedEquipment, installer_name: emp?.full_name || '' });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar técnico" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {employees.map((emp) => (
+                              <SelectItem key={emp.user_id} value={emp.user_id}>
+                                {emp.full_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   ) : (
