@@ -40,6 +40,40 @@ export default function Payments() {
     },
   });
 
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, name')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: banks = [] } = useQuery({
+    queryKey: ['banks'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('banks')
+        .select('id, name, short_name')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const getPaymentMethodName = (id: string) => {
+    const method = paymentMethods.find(m => m.id === id);
+    return method?.name || id;
+  };
+
+  const getBankName = (id: string) => {
+    const bank = banks.find(b => b.id === id);
+    return bank?.short_name || bank?.name || id;
+  };
+
   // Calculate stats
   const now = new Date();
   const monthStart = startOfMonth(now);
@@ -114,9 +148,9 @@ export default function Payments() {
       header: 'Tipo',
       render: (payment: PaymentWithClient) => (
         <div>
-          <Badge variant="outline">{payment.payment_type}</Badge>
+          <Badge variant="outline">{getPaymentMethodName(payment.payment_type)}</Badge>
           {payment.bank_type && (
-            <p className="text-xs text-muted-foreground mt-1">{payment.bank_type}</p>
+            <p className="text-xs text-muted-foreground mt-1">{getBankName(payment.bank_type)}</p>
           )}
         </div>
       ),
