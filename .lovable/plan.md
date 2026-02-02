@@ -1,179 +1,175 @@
 
 
-# Plan: Homologacion de Inputs y Correcciones del Sistema
+# Plan: Validaciones Obligatorias y Corrección de Datos Prospecto→Cliente
 
-## Resumen de Cambios
+## Resumen
 
-Se homologaran todos los inputs del sistema para mantener consistencia en:
-- MAC addresses (formato XX:XX:XX:XX:XX:XX)
-- Direcciones IP (validacion de formato)
-- Telefonos (formato XXX-XXX-XXXX con selector de pais)
-- Instalador/Tecnico (selector de catalogo de usuarios)
-- Correccion del calculo de prorrateo
+Se implementarán validaciones que **bloqueen el guardado** cuando haya errores en MAC, IP o teléfono, y se corregirá el flujo de conversión prospecto→cliente para que la fecha de instalación y el técnico instalador se transfieran correctamente.
 
 ---
 
-## 1. Crear Componente de IP Address
+## 1. Exportar Funciones de Validación
 
-**Nuevo archivo:** `src/components/shared/IpAddressInput.tsx`
+**Archivos a modificar:**
+- `src/lib/formatUtils.ts` - Agregar validación de IP
+- `src/lib/phoneUtils.ts` - Agregar validación de teléfono completo
 
-Componente que valida el formato de IP (XXX.XXX.XXX.XXX):
-- Solo permite numeros y puntos
-- Maximo 15 caracteres
-- Validacion visual (borde ambar si incompleto)
-- Acepta IPv4 estandar
+Se exportarán las funciones para reutilizarlas:
 
 ```typescript
-// Validacion: cada octeto 0-255, separado por puntos
-const isValidIP = (ip: string) => {
+// formatUtils.ts - Agregar:
+export function isValidIPAddress(ip: string): boolean {
+  if (!ip) return true; // Vacío es válido (campo opcional)
   const pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
   if (!pattern.test(ip)) return false;
   return ip.split('.').every(n => parseInt(n) <= 255);
+}
+
+// phoneUtils.ts - Agregar:
+export function isPhoneComplete(phone: string): boolean {
+  if (!phone) return true; // Vacío es válido para campos opcionales
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 10;
+}
+```
+
+---
+
+## 2. Bloquear Guardado con Errores en ClientDetail
+
+**Archivo:** `src/pages/ClientDetail.tsx`
+
+Agregar validación al inicio de `handleSave` (línea ~923):
+
+```typescript
+const handleSave = async () => {
+  if (!client || !clientId) return;
+  
+  // VALIDACIONES OBLIGATORIAS
+  const errors: string[] = [];
+  
+  // Validar teléfonos
+  if (!isPhoneComplete(editedClient.phone1)) {
+    errors.push('Teléfono 1 debe tener 10 dígitos');
+  }
+  if (editedClient.phone2 && !isPhoneComplete(editedClient.phone2)) {
+    errors.push('Teléfono 2 debe tener 10 dígitos');
+  }
+  if (editedClient.phone3 && !isPhoneComplete(editedClient.phone3)) {
+    errors.push('Teléfono 3 debe tener 10 dígitos');
+  }
+  
+  // Validar MACs (si tienen valor, deben estar completas)
+  if (editedEquipment.antenna_mac && !isMacAddressComplete(editedEquipment.antenna_mac)) {
+    errors.push('MAC Antena debe tener 12 caracteres hexadecimales');
+  }
+  if (editedEquipment.router_mac && !isMacAddressComplete(editedEquipment.router_mac)) {
+    errors.push('MAC Router debe tener 12 caracteres hexadecimales');
+  }
+  
+  // Validar IPs (si tienen valor, deben ser válidas)
+  if (editedEquipment.antenna_ip && !isValidIPAddress(editedEquipment.antenna_ip)) {
+    errors.push('IP Antena no tiene formato válido (ej: 192.168.1.1)');
+  }
+  if (editedEquipment.router_ip && !isValidIPAddress(editedEquipment.router_ip)) {
+    errors.push('IP Router no tiene formato válido');
+  }
+  
+  if (errors.length > 0) {
+    toast.error(errors.join('\n'));
+    return; // NO GUARDAR
+  }
+  
+  // ... resto del código de guardado
 };
 ```
 
 ---
 
-## 2. Correccion del Prorrateo
+## 3. Corregir FinalizeProspectDialog - Transferir Datos del Prospecto
 
-**Archivo:** `src/lib/billing.ts`
+**Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
 
-El problema actual es que cuando la instalacion es DESPUES del dia de corte, no se esta contando el dia de instalacion.
+### 3.1 Obtener nombre del técnico asignado
 
-**Ejemplo:**
-- Instalar dia 15, corte dia 10, mes de 31 dias
-- Actual: 31-15=16 + 9 = 25 dias
-- Correcto: debe ser 26 dias (15,16...31 = 17 dias + 1-9 = 9 dias)
-
-**Cambio linea 27:**
-```typescript
-// ANTES:
-const daysUntilEndOfMonth = lastDayOfMonth - installDay;
-
-// DESPUES (incluir dia de instalacion):
-const daysUntilEndOfMonth = lastDayOfMonth - installDay + 1;
-```
-
----
-
-## 3. Instalador como Catalogo de Usuarios
-
-**Archivos a modificar:**
-- `src/pages/ClientDetail.tsx` (lineas 1728-1732)
-- `src/components/clients/ClientFormDialog.tsx`
-
-Cambiar el campo `installer_name` de texto libre a un Select que traiga los usuarios de la tabla `profiles`:
+Agregar query para obtener el nombre del técnico (después de línea ~118):
 
 ```typescript
-// Fetch de tecnicos
-const { data: technicians } = useQuery({
-  queryKey: ['technicians'],
+// Fetch assigned technician name
+const { data: assignedTechnician } = useQuery({
+  queryKey: ['assigned-technician', prospect?.assigned_to],
   queryFn: async () => {
-    const { data } = await supabase
+    if (!prospect?.assigned_to) return null;
+    const { data, error } = await supabase
       .from('profiles')
-      .select('user_id, full_name')
-      .order('full_name');
-    return data;
+      .select('full_name')
+      .eq('user_id', prospect.assigned_to)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.full_name || null;
   },
+  enabled: !!prospect?.assigned_to,
 });
-
-// En el render (modo edicion):
-<Select
-  value={editedEquipment.installer_id || ''}
-  onValueChange={(v) => setEditedEquipment({ 
-    ...editedEquipment, 
-    installer_id: v 
-  })}
->
-  <SelectTrigger>
-    <SelectValue placeholder="Seleccionar tecnico" />
-  </SelectTrigger>
-  <SelectContent>
-    {technicians?.map((t) => (
-      <SelectItem key={t.user_id} value={t.user_id}>
-        {t.full_name}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
 ```
 
-**Nota:** Se debera agregar el campo `installer_id` a la tabla `equipment` para almacenar el UUID del tecnico.
+### 3.2 Modificar creación de equipment (líneas 401-413)
 
----
-
-## 4. Telefono en Pagos con PhoneInput
-
-**Archivo:** `src/components/payments/PaymentFormDialog.tsx` (lineas 546-558)
-
-Cambiar el input de texto simple por el componente `PhoneInput`:
-
+Cambiar de:
 ```typescript
-// Agregar estado para pais del telefono
-const [payerPhoneCountry, setPayerPhoneCountry] = useState<PhoneCountry>('MX');
-
-// Reemplazar el FormField de payer_phone:
-<FormField
-  control={form.control}
-  name="payer_phone"
-  render={({ field }) => (
-    <FormItem>
-      <FormLabel>Telefono del Pagador</FormLabel>
-      <FormControl>
-        <PhoneInput
-          value={field.value || ''}
-          onChange={field.onChange}
-          country={payerPhoneCountry}
-          onCountryChange={setPayerPhoneCountry}
-        />
-      </FormControl>
-      <FormMessage />
-    </FormItem>
-  )}
-/>
+const { error: equipmentError } = await supabase
+  .from('equipment')
+  .insert({
+    client_id: clientData.id,
+    antenna_ssid: data.ssid || null,
+    antenna_ip: data.antenna_ip || null,
+  });
 ```
 
----
-
-## 5. Aplicar IpAddressInput en ClientDetail
-
-**Archivo:** `src/pages/ClientDetail.tsx`
-
-Reemplazar inputs de IP (lineas 1569-1573 y 1669-1673):
-
+A:
 ```typescript
-// Antena IP (linea 1571)
-<IpAddressInput
-  value={editedEquipment.antenna_ip || ''}
-  onChange={(v) => setEditedEquipment({ ...editedEquipment, antenna_ip: v })}
-/>
-
-// Router IP (linea 1671)
-<IpAddressInput
-  value={editedEquipment.router_ip || ''}
-  onChange={(v) => setEditedEquipment({ ...editedEquipment, router_ip: v })}
-/>
+const { error: equipmentError } = await supabase
+  .from('equipment')
+  .insert({
+    client_id: clientData.id,
+    antenna_ssid: data.ssid || null,
+    antenna_ip: data.antenna_ip || null,
+    installation_date: data.installation_date,  // NUEVO
+    installer_name: assignedTechnician || null, // NUEVO - desde prospecto
+  });
 ```
 
 ---
 
-## 6. Aplicar IpAddressInput en ClientFormDialog
+## 4. Actualizar Datos del Cliente Actual en BD
 
-**Archivo:** `src/components/clients/ClientFormDialog.tsx`
+Se ejecutará una actualización SQL para corregir el cliente que actualmente tiene fecha de instalación vacía:
 
-Mismos cambios para los campos:
-- `router_ip`
-- `antenna_ip`
+```sql
+-- Actualizar equipment con fecha de instalación desde client_billing
+UPDATE equipment e
+SET 
+  installation_date = cb.installation_date,
+  installer_name = pr.full_name
+FROM clients c
+JOIN client_billing cb ON cb.client_id = c.id
+JOIN prospects p ON p.id = c.prospect_id
+LEFT JOIN profiles pr ON pr.user_id = p.assigned_to
+WHERE e.client_id = c.id
+AND c.id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
+```
 
 ---
 
-## 7. Aplicar IpAddressInput en ProspectFormDialog y EditProspectDialog
+## 5. Aplicar Validaciones en Otros Formularios
 
-**Archivos:**
-- `src/components/prospects/ProspectFormDialog.tsx`
-- `src/components/prospects/EditProspectDialog.tsx`
+Se aplicarán las mismas validaciones obligatorias en:
 
-Cambiar el input de `antenna_ip` por `IpAddressInput`.
+| Archivo | Campos a Validar |
+|---------|------------------|
+| `ClientFormDialog.tsx` | Teléfonos, MAC, IP |
+| `ProspectFormDialog.tsx` | Teléfonos, IP antena |
+| `EditProspectDialog.tsx` | Teléfonos, IP antena |
+| `PaymentFormDialog.tsx` | Teléfono pagador |
 
 ---
 
@@ -181,76 +177,83 @@ Cambiar el input de `antenna_ip` por `IpAddressInput`.
 
 | Archivo | Cambios |
 |---------|---------|
-| **NUEVO:** `src/components/shared/IpAddressInput.tsx` | Componente de validacion IP |
-| `src/lib/billing.ts` | Correccion formula prorrateo |
-| `src/pages/ClientDetail.tsx` | IP inputs + Instalador como Select |
-| `src/components/clients/ClientFormDialog.tsx` | IP inputs + Instalador como Select |
-| `src/components/payments/PaymentFormDialog.tsx` | PhoneInput para telefono pagador |
-| `src/components/prospects/ProspectFormDialog.tsx` | IP input |
-| `src/components/prospects/EditProspectDialog.tsx` | IP input |
+| `src/lib/formatUtils.ts` | Exportar `isValidIPAddress`, `isValidMacAddress` |
+| `src/lib/phoneUtils.ts` | Agregar y exportar `isPhoneComplete` |
+| `src/pages/ClientDetail.tsx` | Validaciones antes de guardar |
+| `src/components/prospects/FinalizeProspectDialog.tsx` | Pasar installation_date e installer_name desde prospecto |
+| `src/components/clients/ClientFormDialog.tsx` | Validaciones antes de guardar |
+| `src/components/prospects/ProspectFormDialog.tsx` | Validaciones antes de guardar |
+| `src/components/prospects/EditProspectDialog.tsx` | Validaciones antes de guardar |
+| `src/components/payments/PaymentFormDialog.tsx` | Validación teléfono pagador |
 
 ---
 
-## Seccion Tecnica
+## Sección Técnica
 
-### Componente IpAddressInput
+### Función de Validación Completa
 
 ```typescript
-interface IpAddressInputProps {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
 }
 
-export function IpAddressInput({ value, onChange, ... }: IpAddressInputProps) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Solo permitir numeros y puntos
-    const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-    // Evitar multiples puntos seguidos
-    const normalized = cleaned.replace(/\.+/g, '.');
-    onChange(normalized);
+export function validateClientData(
+  client: EditedClientData, 
+  equipment: EditedEquipmentData
+): ValidationResult {
+  const errors: string[] = [];
+  
+  // Teléfono 1 obligatorio y completo
+  if (!client.phone1 || !isPhoneComplete(client.phone1)) {
+    errors.push('Teléfono 1 debe tener 10 dígitos');
+  }
+  
+  // Teléfonos opcionales pero si tienen valor, deben estar completos
+  if (client.phone2 && !isPhoneComplete(client.phone2)) {
+    errors.push('Teléfono 2 incompleto');
+  }
+  
+  // MACs opcionales pero si tienen valor, deben ser válidas
+  if (equipment.antenna_mac && !isMacAddressComplete(equipment.antenna_mac)) {
+    errors.push('MAC Antena incompleta (requiere 12 caracteres hex)');
+  }
+  
+  // IPs opcionales pero si tienen valor, deben ser válidas
+  if (equipment.antenna_ip && !isValidIPAddress(equipment.antenna_ip)) {
+    errors.push('IP Antena inválida');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
   };
-
-  const isValid = isValidIPAddress(value);
-  const isPartial = value.length > 0 && !isValid;
-
-  return (
-    <Input
-      value={value}
-      onChange={handleChange}
-      placeholder="192.168.1.1"
-      maxLength={15}
-      className={isPartial ? 'border-amber-500' : ''}
-    />
-  );
 }
 ```
 
-### Migracion de Base de Datos (Opcional)
-
-Para soportar el instalador como referencia a usuarios, se puede agregar un campo `installer_id`:
+### SQL para Actualizar Cliente Existente
 
 ```sql
-ALTER TABLE equipment ADD COLUMN installer_id UUID REFERENCES profiles(user_id);
+-- Primero verificar los datos
+SELECT 
+  c.id as client_id,
+  c.first_name,
+  e.installation_date as equip_install_date,
+  cb.installation_date as billing_install_date,
+  e.installer_name as current_installer,
+  pr.full_name as prospect_technician
+FROM clients c
+JOIN equipment e ON e.client_id = c.id
+JOIN client_billing cb ON cb.client_id = c.id
+JOIN prospects p ON p.id = c.prospect_id
+LEFT JOIN profiles pr ON pr.user_id = p.assigned_to
+WHERE c.id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
+
+-- Actualizar
+UPDATE equipment 
+SET 
+  installation_date = '2026-01-28',
+  installer_name = 'Raul Michel'
+WHERE client_id = 'bde7ab1d-7c6f-4e75-ab61-5736f2a66793';
 ```
-
-Sin embargo, si se prefiere mantener compatibilidad, se puede seguir usando `installer_name` y simplemente guardar el `full_name` del usuario seleccionado.
-
-### Formula de Prorrateo Corregida
-
-**Caso 2 - Instalacion despues del dia de corte:**
-```typescript
-// Dias restantes del mes INCLUYENDO el dia de instalacion
-const daysUntilEndOfMonth = lastDayOfMonth - installDay + 1;
-// Dias del siguiente mes hasta un dia ANTES del corte
-daysCharged = daysUntilEndOfMonth + (billingDay - 1);
-```
-
-Ejemplo verificado:
-- Dia instalacion: 15
-- Dia corte: 10
-- Mes: 31 dias
-- Resultado: (31-15+1) + (10-1) = 17 + 9 = 26 dias
 
