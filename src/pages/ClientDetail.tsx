@@ -522,6 +522,38 @@ export default function ClientDetail() {
     c.description?.toLowerCase().includes('mensualidad')
   );
 
+  // Calcular costos iniciales desde los cargos reales (no desde billing)
+  const initialCostsFromCharges = useMemo(() => {
+    const installationCharge = charges.find((c: any) => 
+      c.description?.toLowerCase().includes('instalación') || 
+      c.description?.toLowerCase().includes('instalacion')
+    );
+    const prorrateoCharge = charges.find((c: any) => 
+      c.description?.toLowerCase().includes('prorrateo')
+    );
+    // Cargos adicionales = cargos que no son instalación, prorrateo ni mensualidad
+    const additionalCharges = charges.filter((c: any) => {
+      const desc = c.description?.toLowerCase() || '';
+      return !desc.includes('instalación') && 
+             !desc.includes('instalacion') && 
+             !desc.includes('prorrateo') && 
+             !desc.includes('mensualidad');
+    });
+    
+    const installationCost = installationCharge?.amount || 0;
+    const proratedAmount = prorrateoCharge?.amount || 0;
+    const additionalAmount = additionalCharges.reduce((sum: number, c: any) => sum + Number(c.amount), 0);
+    const additionalNotes = additionalCharges.map((c: any) => c.description).join(', ');
+    
+    return {
+      installationCost,
+      proratedAmount,
+      additionalAmount,
+      additionalNotes,
+      total: installationCost + proratedAmount + additionalAmount
+    };
+  }, [charges]);
+
   // Generate mensualidades - now based on client_charges records
   const generateMensualidades = () => {
     if (!billing?.installation_date) return [];
@@ -2018,8 +2050,8 @@ export default function ClientDetail() {
                   </CardContent>
                 </Card>
 
-                {/* Initial costs summary */}
-                {billing && (billing.installation_cost > 0 || billing.prorated_amount > 0 || (billing.additional_charges || 0) > 0) && (
+                {/* Initial costs summary - calculated from actual charges */}
+                {initialCostsFromCharges.total > 0 && (
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-lg flex items-center gap-2">
@@ -2031,23 +2063,23 @@ export default function ClientDetail() {
                       <div className="grid grid-cols-4 gap-4">
                         <div className="bg-muted/50 p-4 rounded-lg text-center">
                           <p className="text-xs text-muted-foreground uppercase">Instalación</p>
-                          <p className="text-xl font-bold">{formatCurrency(billing.installation_cost || 0)}</p>
+                          <p className="text-xl font-bold">{formatCurrency(initialCostsFromCharges.installationCost)}</p>
                         </div>
                         <div className="bg-muted/50 p-4 rounded-lg text-center">
                           <p className="text-xs text-muted-foreground uppercase">Prorrateo</p>
-                          <p className="text-xl font-bold">{formatCurrency(billing.prorated_amount || 0)}</p>
+                          <p className="text-xl font-bold">{formatCurrency(initialCostsFromCharges.proratedAmount)}</p>
                         </div>
                         <div className="bg-muted/50 p-4 rounded-lg text-center">
                           <p className="text-xs text-muted-foreground uppercase">Cargos Adicionales</p>
-                          <p className="text-xl font-bold">{formatCurrency(billing.additional_charges || 0)}</p>
-                          {billing.additional_charges_notes && (
-                            <p className="text-xs text-muted-foreground mt-1">{billing.additional_charges_notes}</p>
+                          <p className="text-xl font-bold">{formatCurrency(initialCostsFromCharges.additionalAmount)}</p>
+                          {initialCostsFromCharges.additionalNotes && (
+                            <p className="text-xs text-muted-foreground mt-1">{initialCostsFromCharges.additionalNotes}</p>
                           )}
                         </div>
                         <div className="bg-primary/10 p-4 rounded-lg text-center">
                           <p className="text-xs text-muted-foreground uppercase">Total Inicial</p>
                           <p className="text-xl font-bold text-primary">
-                            {formatCurrency((billing.installation_cost || 0) + (billing.prorated_amount || 0) + (billing.additional_charges || 0))}
+                            {formatCurrency(initialCostsFromCharges.total)}
                           </p>
                         </div>
                       </div>
