@@ -40,6 +40,40 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
     enabled: !!payment?.id && open,
   });
 
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, name')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: banks = [] } = useQuery({
+    queryKey: ['banks'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('banks')
+        .select('id, name, short_name')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const getPaymentMethodName = (id: string) => {
+    const method = paymentMethods.find(m => m.id === id);
+    return method?.name || id;
+  };
+
+  const getBankName = (id: string) => {
+    const bank = banks.find(b => b.id === id);
+    return bank?.short_name || bank?.name || id;
+  };
+
   if (!payment) return null;
 
   return (
@@ -61,7 +95,7 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
               </p>
             </div>
             <Badge variant="outline" className="text-lg px-4 py-1">
-              {payment.payment_type}
+              {getPaymentMethodName(payment.payment_type)}
             </Badge>
           </div>
 
@@ -92,7 +126,7 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
             {payment.bank_type && (
               <div>
                 <p className="text-sm text-muted-foreground">Banco</p>
-                <p className="font-medium">{payment.bank_type}</p>
+                <p className="font-medium">{getBankName(payment.bank_type)}</p>
               </div>
             )}
 
