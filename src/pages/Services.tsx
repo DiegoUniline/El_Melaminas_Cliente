@@ -40,6 +40,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { formatCurrency } from '@/lib/billing';
 
 const SERVICE_TYPES = {
   installation: { label: 'Instalación', color: 'bg-blue-500' },
@@ -438,7 +439,7 @@ export default function Services() {
                         {service.charge_amount && service.charge_amount > 0 && (
                           <div className="flex items-center gap-2 text-sm">
                             <DollarSign className="h-4 w-4 text-muted-foreground" />
-                            <span>Cargo: ${service.charge_amount}</span>
+                            <span>Cargo: {formatCurrency(service.charge_amount)}</span>
                           </div>
                         )}
                         {service.description && (

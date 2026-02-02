@@ -36,6 +36,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format, isToday, isTomorrow, isPast, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { formatCurrency } from '@/lib/billing';
 
 const SERVICE_TYPES = {
   installation: { label: 'Instalación', color: 'bg-blue-500', textColor: 'text-blue-500' },
@@ -635,7 +636,7 @@ export default function TechnicianDashboard() {
                 {detailService.charge_amount && detailService.charge_amount > 0 && (
                   <div className="flex items-start gap-3">
                     <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                    <p className="font-medium">Cobrar: ${detailService.charge_amount}</p>
+                    <p className="font-medium">Cobrar: {formatCurrency(detailService.charge_amount)}</p>
                   </div>
                 )}
               </div>
