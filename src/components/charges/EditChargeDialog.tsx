@@ -48,11 +48,18 @@ export function EditChargeDialog({ charge, open, onOpenChange, onSuccess }: Edit
 
   useEffect(() => {
     if (charge) {
+      // Asegurar que la fecha esté en formato YYYY-MM-DD para el input
+      let dueDate = '';
+      if (charge.due_date) {
+        // Si viene como ISO string con tiempo, extraer solo la fecha
+        dueDate = charge.due_date.split('T')[0];
+      }
+      
       setFormData({
         description: charge.description,
         amount: charge.amount.toString(),
         status: charge.status,
-        due_date: charge.due_date || '',
+        due_date: dueDate,
       });
     }
   }, [charge]);
