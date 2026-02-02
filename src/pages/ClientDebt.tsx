@@ -11,6 +11,7 @@ import { PaymentFormDialog } from '@/components/payments/PaymentFormDialog';
 import { exportToExcel } from '@/lib/exportToExcel';
 import { useAuth } from '@/hooks/useAuth';
 import { Download, CreditCard, AlertTriangle, DollarSign } from 'lucide-react';
+import { formatCurrency } from '@/lib/billing';
 import type { Client, ClientBilling, Equipment } from '@/types/database';
 
 type ClientWithDetails = Client & {
@@ -110,7 +111,7 @@ export default function ClientDebt() {
       header: 'Mensualidad',
       render: (client: ClientWithDetails) => (
         <span className="font-medium">
-          ${client.client_billing?.monthly_fee?.toLocaleString() || '0'}
+          {formatCurrency(client.client_billing?.monthly_fee || 0)}
         </span>
       ),
     },
@@ -119,7 +120,7 @@ export default function ClientDebt() {
       header: 'Saldo Deudor',
       render: (client: ClientWithDetails) => (
         <Badge variant="destructive" className="text-base">
-          ${(client.client_billing?.balance || 0).toLocaleString()}
+          {formatCurrency(client.client_billing?.balance || 0)}
         </Badge>
       ),
     },
@@ -162,7 +163,7 @@ export default function ClientDebt() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-destructive">
-                ${totalDebt.toLocaleString()}
+                {formatCurrency(totalDebt)}
               </div>
               <p className="text-xs text-muted-foreground">suma de todos los adeudos</p>
             </CardContent>

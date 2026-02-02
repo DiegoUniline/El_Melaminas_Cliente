@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CreditCard, User, Calendar, Receipt, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { formatCurrency } from '@/lib/billing';
 import type { Payment, Client } from '@/types/database';
 
 type PaymentWithClient = Payment & {
@@ -91,7 +92,7 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
             <div>
               <p className="text-sm text-muted-foreground">Monto</p>
               <p className="text-3xl font-bold text-green-600">
-                ${payment.amount.toLocaleString()}
+                {formatCurrency(payment.amount)}
               </p>
             </div>
             <Badge variant="outline" className="text-lg px-4 py-1">
@@ -184,14 +185,14 @@ export function PaymentDetailDialog({ payment, open, onOpenChange }: PaymentDeta
                   >
                     <span className="text-sm">{charge.description}</span>
                     <span className="text-sm font-medium text-green-600">
-                      ${charge.amount.toLocaleString()}
+                      {formatCurrency(charge.amount)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="text-sm font-medium">Total aplicado</span>
                   <span className="font-bold text-green-600">
-                    ${coveredCharges.reduce((sum, c) => sum + c.amount, 0).toLocaleString()}
+                    {formatCurrency(coveredCharges.reduce((sum, c) => sum + c.amount, 0))}
                   </span>
                 </div>
               </div>

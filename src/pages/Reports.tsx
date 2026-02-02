@@ -396,7 +396,7 @@ export default function Reports() {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="month" />
                         <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-                        <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, 'Ingresos']} />
+                        <Tooltip formatter={(value: number) => [formatCurrency(value), 'Ingresos']} />
                         <Area type="monotone" dataKey="ingresos" stroke="#3b82f6" fillOpacity={1} fill="url(#colorIngresos)" strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>

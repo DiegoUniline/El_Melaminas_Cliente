@@ -35,6 +35,7 @@ import { ComboboxWithCreate, CatalogItem } from '@/components/shared/ComboboxWit
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { formatCurrency } from '@/lib/billing';
 import type { Client, ClientBilling } from '@/types/database';
 import { isPhoneComplete } from '@/lib/phoneUtils';
 
@@ -188,7 +189,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
           payer_name: data.payer_name || null,
           payer_phone: data.payer_phone || null,
           notes: creditUsed > 0 
-            ? `${data.notes || ''} [Incluye $${creditUsed.toLocaleString()} de saldo a favor]`.trim()
+            ? `${data.notes || ''} [Incluye ${formatCurrency(creditUsed)} de saldo a favor]`.trim()
             : data.notes || null,
           created_by: user?.id,
         }).select().single();
@@ -205,7 +206,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
           amount: 0,
           payment_type: saldoFavorMethod?.id || paymentMethods[0]?.id || 'Saldo a favor',
           payment_date: data.payment_date,
-          notes: `Aplicación de saldo a favor: $${creditUsed.toLocaleString()}`,
+          notes: `Aplicación de saldo a favor: ${formatCurrency(creditUsed)}`,
           created_by: user?.id,
         }).select().single();
 
@@ -322,10 +323,10 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
           summaryMessage += `${monthsToCovered} mensualidad(es) adelantada(s). `;
         }
         if (creditUsed > 0) {
-          summaryMessage += `Se aplicaron $${creditUsed.toLocaleString()} de saldo a favor. `;
+          summaryMessage += `Se aplicaron ${formatCurrency(creditUsed)} de saldo a favor. `;
         }
         if (newBalance < 0) {
-          summaryMessage += `Saldo a favor: $${Math.abs(newBalance).toLocaleString()}`;
+          summaryMessage += `Saldo a favor: ${formatCurrency(Math.abs(newBalance))}`;
         }
         
         toast.success(summaryMessage.trim());
@@ -358,11 +359,11 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
             <br />
             Saldo actual:{' '}
             <span className={(client.client_billing?.balance || 0) > 0 ? 'text-destructive' : 'text-green-600'}>
-              ${client.client_billing?.balance?.toLocaleString() || '0'}
+              {formatCurrency(client.client_billing?.balance || 0)}
             </span>
             {hasCreditBalance && (
               <span className="ml-2 text-green-600 font-medium">
-                (Saldo a favor: ${availableCreditBalance.toLocaleString()})
+                (Saldo a favor: {formatCurrency(availableCreditBalance)})
               </span>
             )}
           </p>
@@ -395,7 +396,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
                       </label>
                     </div>
                     <span className="text-sm font-semibold">
-                      Disponible: ${availableCreditBalance.toLocaleString()}
+                      Disponible: {formatCurrency(availableCreditBalance)}
                     </span>
                   </div>
                   
@@ -451,7 +452,7 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
                     </FormControl>
                     {useCreditBalance && creditAmountToUse > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Total a aplicar: ${(field.value + creditAmountToUse).toLocaleString()}
+                        Total a aplicar: {formatCurrency((field.value || 0) + creditAmountToUse)}
                       </p>
                     )}
                     <FormMessage />
