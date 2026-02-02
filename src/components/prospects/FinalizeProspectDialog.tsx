@@ -70,6 +70,7 @@ const finalizeSchema = z.object({
   ssid: z.string().optional(),
   antenna_ip: z.string().optional(),
   notes: z.string().optional(),
+  installer_id: z.string().optional(),
   // Billing
   plan_id: z.string().optional(),
   monthly_fee: z.number().min(0, 'La mensualidad debe ser mayor o igual a 0'),
@@ -118,20 +119,17 @@ export function FinalizeProspectDialog({
     },
   });
 
-  // Fetch assigned technician name from prospect
-  const { data: assignedTechnician } = useQuery({
-    queryKey: ['assigned-technician', prospect?.assigned_to],
+  // Fetch all technicians for installer selection
+  const { data: technicians = [] } = useQuery({
+    queryKey: ['technicians'],
     queryFn: async () => {
-      if (!prospect?.assigned_to) return null;
       const { data, error } = await supabase
         .from('profiles')
-        .select('full_name')
-        .eq('user_id', prospect.assigned_to)
-        .maybeSingle();
+        .select('user_id, full_name')
+        .order('full_name');
       if (error) throw error;
-      return data?.full_name || null;
+      return data;
     },
-    enabled: !!prospect?.assigned_to,
   });
 
   // Fetch charge catalog
@@ -200,6 +198,8 @@ export function FinalizeProspectDialog({
         ssid: prospect.ssid || '',
         antenna_ip: prospect.antenna_ip || '',
         notes: prospect.notes || '',
+        // Technical - pre-load installer from prospect
+        installer_id: prospect.assigned_to || '',
         // Billing defaults
         plan_id: '',
         monthly_fee: undefined,
@@ -373,6 +373,12 @@ export function FinalizeProspectDialog({
       errors.forEach(err => toast.error(err));
       return;
     }
+
+    // Confirmar antes de guardar
+    const confirmed = window.confirm(
+      `¿Confirmas que los datos son correctos?\n\nTotal a cobrar: ${formatCurrency(totalInitialBalance)}`
+    );
+    if (!confirmed) return;
     
     setIsLoading(true);
     try {
@@ -438,6 +444,9 @@ export function FinalizeProspectDialog({
 
       // 4. Create equipment record
       if (clientData) {
+        // Get installer name from selected installer_id
+        const installerName = technicians.find(t => t.user_id === data.installer_id)?.full_name || null;
+        
         const { error: equipmentError } = await supabase
           .from('equipment')
           .insert({
@@ -445,7 +454,7 @@ export function FinalizeProspectDialog({
             antenna_ssid: data.ssid || null,
             antenna_ip: data.antenna_ip || null,
             installation_date: data.installation_date,
-            installer_name: assignedTechnician || null,
+            installer_name: installerName,
           });
 
         if (equipmentError) {
@@ -780,6 +789,31 @@ export function FinalizeProspectDialog({
 
               {/* Technical Tab */}
               <TabsContent value="technical" className="space-y-4 pt-4">
+                <FormField
+                  control={form.control}
+                  name="installer_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Técnico Instalador</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar técnico" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {technicians.map((t) => (
+                            <SelectItem key={t.user_id} value={t.user_id}>
+                              {t.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -1091,20 +1125,21 @@ export function FinalizeProspectDialog({
                   </Card>
 
                   {/* Technical */}
-                  {(form.watch('ssid') || form.watch('antenna_ip')) && (
-                    <Card>
-                      <CardHeader className="py-3">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Wifi className="h-4 w-4" />
-                          Datos Técnicos
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="text-sm space-y-1">
-                        {form.watch('ssid') && <p><strong>SSID:</strong> {form.watch('ssid')}</p>}
-                        {form.watch('antenna_ip') && <p><strong>IP Antena:</strong> {form.watch('antenna_ip')}</p>}
-                      </CardContent>
-                    </Card>
-                  )}
+                  <Card>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Wifi className="h-4 w-4" />
+                        Datos Técnicos
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm space-y-1">
+                      {technicians.find(t => t.user_id === form.watch('installer_id'))?.full_name && (
+                        <p><strong>Instalador:</strong> {technicians.find(t => t.user_id === form.watch('installer_id'))?.full_name}</p>
+                      )}
+                      {form.watch('ssid') && <p><strong>SSID:</strong> {form.watch('ssid')}</p>}
+                      {form.watch('antenna_ip') && <p><strong>IP Antena:</strong> {form.watch('antenna_ip')}</p>}
+                    </CardContent>
+                  </Card>
 
                   {/* Billing Summary */}
                   <Card className="border-primary">
@@ -1133,18 +1168,54 @@ export function FinalizeProspectDialog({
                           <span>{form.watch('billing_day')}</span>
                         </div>
                         <Separator className="my-2" />
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span>Costo de Instalación:</span>
-                          <span className="font-medium">{formatCurrency(form.watch('installation_cost'))}</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={form.watch('installation_cost') ?? ''}
+                            onChange={(e) => form.setValue('installation_cost', parseFloat(e.target.value) || 0)}
+                            className="w-28 h-7 text-sm text-right"
+                          />
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span>Prorrateo:</span>
-                          <span className="font-medium">{formatCurrency(form.watch('prorated_amount'))}</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={form.watch('prorated_amount') ?? ''}
+                            onChange={(e) => form.setValue('prorated_amount', parseFloat(e.target.value) || 0)}
+                            className="w-28 h-7 text-sm text-right"
+                          />
                         </div>
                         {selectedCharges.map((charge, i) => (
-                          <div key={i} className="flex justify-between">
+                          <div key={i} className="flex justify-between items-center">
                             <span>{charge.name}:</span>
-                            <span className="font-medium">{formatCurrency(charge.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={charge.amount}
+                                onChange={(e) => {
+                                  const newCharges = [...selectedCharges];
+                                  newCharges[i] = { ...charge, amount: parseFloat(e.target.value) || 0 };
+                                  setSelectedCharges(newCharges);
+                                }}
+                                className="w-24 h-7 text-sm text-right"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => handleRemoveCharge(i)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                         <Separator className="my-2" />
