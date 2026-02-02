@@ -59,6 +59,31 @@ const prospectSchema = z.object({
   ssid: z.string().max(50).optional(),
   antenna_ip: z.string().max(50).optional(),
   notes: z.string().max(1000).optional(),
+}).superRefine((data, ctx) => {
+  // Validar phone2 si tiene algún valor
+  if (data.phone2 && data.phone2.length > 0 && !isPhoneComplete(data.phone2)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'El teléfono 2 debe tener 10 dígitos',
+      path: ['phone2'],
+    });
+  }
+  // Validar phone3_signer si tiene algún valor
+  if (data.phone3_signer && data.phone3_signer.length > 0 && !isPhoneComplete(data.phone3_signer)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'El teléfono de quien firmará debe tener 10 dígitos',
+      path: ['phone3_signer'],
+    });
+  }
+  // Validar antenna_ip si tiene algún valor
+  if (data.antenna_ip && data.antenna_ip.length > 0 && !isValidIPAddress(data.antenna_ip)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'La IP de antena no tiene formato válido',
+      path: ['antenna_ip'],
+    });
+  }
 });
 
 type ProspectFormValues = z.infer<typeof prospectSchema>;
@@ -119,27 +144,6 @@ export function ProspectFormDialog({
   });
 
   const onSubmit = async (values: ProspectFormValues) => {
-    // VALIDACIONES OBLIGATORIAS
-    const errors: string[] = [];
-    
-    if (!isPhoneComplete(values.phone1)) {
-      errors.push('Teléfono 1 debe tener 10 dígitos');
-    }
-    if (values.phone2 && !isPhoneComplete(values.phone2)) {
-      errors.push('Teléfono 2 debe tener 10 dígitos');
-    }
-    if (values.phone3_signer && !isPhoneComplete(values.phone3_signer)) {
-      errors.push('Teléfono de quien firmará debe tener 10 dígitos');
-    }
-    if (values.antenna_ip && !isValidIPAddress(values.antenna_ip)) {
-      errors.push('IP Antena no tiene formato válido');
-    }
-    
-    if (errors.length > 0) {
-      errors.forEach(err => toast.error(err));
-      return;
-    }
-    
     setIsLoading(true);
     try {
       const { error } = await supabase.from('prospects').insert({
@@ -268,7 +272,7 @@ export function ProspectFormDialog({
                 <FormField
                   control={form.control}
                   name="phone2"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Teléfono 2</FormLabel>
                       <FormControl>
@@ -278,6 +282,7 @@ export function ProspectFormDialog({
                           country={form.watch('phone2_country') as PhoneCountry}
                           onCountryChange={(country) => form.setValue('phone2_country', country)}
                           placeholder="317-131-5782"
+                          hasError={!!fieldState.error}
                         />
                       </FormControl>
                       <FormMessage />
@@ -287,7 +292,7 @@ export function ProspectFormDialog({
                 <FormField
                   control={form.control}
                   name="phone3_signer"
-                  render={({ field }) => (
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Teléfono de quien firmará</FormLabel>
                       <FormControl>
@@ -297,6 +302,7 @@ export function ProspectFormDialog({
                           country={form.watch('phone3_country') as PhoneCountry}
                           onCountryChange={(country) => form.setValue('phone3_country', country)}
                           placeholder="317-131-5782"
+                          hasError={!!fieldState.error}
                         />
                       </FormControl>
                       <FormMessage />

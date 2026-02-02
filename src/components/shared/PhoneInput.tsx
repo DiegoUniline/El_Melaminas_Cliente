@@ -16,6 +16,7 @@ interface PhoneInputProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  hasError?: boolean;
 }
 
 export function PhoneInput({
@@ -26,6 +27,7 @@ export function PhoneInput({
   placeholder = "000-000-0000",
   disabled = false,
   className = "",
+  hasError = false,
 }: PhoneInputProps) {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);
@@ -58,7 +60,7 @@ export function PhoneInput({
         onChange={handlePhoneChange}
         placeholder={placeholder}
         disabled={disabled}
-        className="flex-1"
+        className={`flex-1 ${hasError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
         maxLength={12} // XXX-XXX-XXXX = 12 chars
       />
     </div>
