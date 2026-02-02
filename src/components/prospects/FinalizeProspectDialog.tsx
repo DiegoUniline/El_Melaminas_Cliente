@@ -592,14 +592,14 @@ export function FinalizeProspectDialog({
           >
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
               <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
-                <TabsTrigger value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
-                <TabsTrigger value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
-                <TabsTrigger value="billing" className="text-xs sm:text-sm flex items-center gap-1">
+                <TabsTrigger type="button" value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
+                <TabsTrigger type="button" value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
+                <TabsTrigger type="button" value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
+                <TabsTrigger type="button" value="billing" className="text-xs sm:text-sm flex items-center gap-1">
                   <DollarSign className="h-3 w-3 hidden sm:inline" />
                   Facturación
                 </TabsTrigger>
-                <TabsTrigger value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
+                <TabsTrigger type="button" value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
                   <ClipboardList className="h-3 w-3 hidden sm:inline" />
                   Resumen
                 </TabsTrigger>
