@@ -219,7 +219,9 @@ export function FinalizeProspectDialog({
   }, [prospect, open, form]);
 
   // Navigation handlers
-  const handleNext = () => {
+  const handleNext = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     const currentIndex = TABS.indexOf(activeTab);
     if (currentIndex < TABS.length - 1) {
       setActiveTab(TABS[currentIndex + 1]);
@@ -597,7 +599,13 @@ export function FinalizeProspectDialog({
             </TabsList>
             
             <form 
-              onSubmit={form.handleSubmit(handleFormSubmit)} 
+              onSubmit={(e) => {
+                e.preventDefault();
+                // Solo procesar si realmente estamos en la última tab
+                if (activeTab === 'summary') {
+                  form.handleSubmit(handleFormSubmit)(e);
+                }
+              }} 
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
                   e.preventDefault();
@@ -1276,7 +1284,7 @@ export function FinalizeProspectDialog({
                   )}
                 </Button>
               ) : (
-                <Button type="button" onClick={handleNext}>
+                <Button type="button" onClick={(e) => handleNext(e)}>
                   Siguiente
                 </Button>
               )}
