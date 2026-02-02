@@ -34,7 +34,8 @@ import { PhoneInput } from '@/components/shared/PhoneInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
 import { Separator } from '@/components/ui/separator';
-import { PhoneCountry } from '@/lib/phoneUtils';
+import { PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
+import { isValidIPAddress } from '@/lib/formatUtils';
 import type { Prospect } from '@/types/database';
 
 const prospectSchema = z.object({
@@ -154,6 +155,27 @@ export function EditProspectDialog({
   if (!prospect) return null;
 
   const onSubmit = async (values: ProspectFormValues) => {
+    // VALIDACIONES OBLIGATORIAS
+    const errors: string[] = [];
+    
+    if (!isPhoneComplete(values.phone1)) {
+      errors.push('Teléfono 1 debe tener 10 dígitos');
+    }
+    if (values.phone2 && !isPhoneComplete(values.phone2)) {
+      errors.push('Teléfono 2 debe tener 10 dígitos');
+    }
+    if (values.phone3_signer && !isPhoneComplete(values.phone3_signer)) {
+      errors.push('Teléfono de quien firmará debe tener 10 dígitos');
+    }
+    if (values.antenna_ip && !isValidIPAddress(values.antenna_ip)) {
+      errors.push('IP Antena no tiene formato válido');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return;
+    }
+    
     setIsLoading(true);
     try {
       // Detect changes to save in history

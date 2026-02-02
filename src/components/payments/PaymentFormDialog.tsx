@@ -36,6 +36,7 @@ import { PhoneInput } from '@/components/shared/PhoneInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { Client, ClientBilling } from '@/types/database';
+import { isPhoneComplete } from '@/lib/phoneUtils';
 
 type ClientWithBilling = Client & {
   client_billing: ClientBilling | null;
@@ -146,6 +147,12 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
 
   const onSubmit = async (data: PaymentFormData) => {
     if (!client) return;
+
+    // VALIDACIÓN: Teléfono del pagador
+    if (data.payer_phone && !isPhoneComplete(data.payer_phone)) {
+      toast.error('Teléfono del pagador debe tener 10 dígitos');
+      return;
+    }
 
     // Calculate total payment (cash + credit balance)
     const cashAmount = data.amount;

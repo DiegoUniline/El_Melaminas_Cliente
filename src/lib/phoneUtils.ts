@@ -67,6 +67,15 @@ export const formatPhoneDisplay = (phone: string | null | undefined, country?: P
 };
 
 /**
+ * Check if phone number is complete (10 digits)
+ */
+export const isPhoneComplete = (phone: string): boolean => {
+  if (!phone) return true; // Empty is valid for optional fields
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 10;
+};
+
+/**
  * Translates status to Spanish
  */
 export const translateStatus = (status: string): string => {

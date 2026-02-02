@@ -32,6 +32,17 @@ export const isValidMacAddress = (value: string): boolean => {
  * Check if MAC address is complete (12 hex digits)
  */
 export const isMacAddressComplete = (value: string): boolean => {
+  if (!value) return true; // Empty is valid for optional fields
   const unformatted = unformatMacAddress(value);
   return unformatted.length === 12;
+};
+
+/**
+ * Validate IPv4 address format (XXX.XXX.XXX.XXX with each octet 0-255)
+ */
+export const isValidIPAddress = (ip: string): boolean => {
+  if (!ip) return true; // Empty is valid for optional fields
+  const pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!pattern.test(ip)) return false;
+  return ip.split('.').every(n => parseInt(n) <= 255);
 };

@@ -55,7 +55,8 @@ import {
   FileDown, Printer, Download
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
-import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry } from '@/lib/phoneUtils';
+import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
+import { isMacAddressComplete, isValidIPAddress } from '@/lib/formatUtils';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
@@ -922,6 +923,42 @@ export default function ClientDetail() {
 
   const handleSave = async () => {
     if (!client || !clientId) return;
+    
+    // VALIDACIONES OBLIGATORIAS
+    const errors: string[] = [];
+    
+    // Validar teléfono 1 (obligatorio)
+    if (!editedClient.phone1 || !isPhoneComplete(editedClient.phone1)) {
+      errors.push('Teléfono 1 debe tener 10 dígitos');
+    }
+    // Validar teléfonos opcionales (si tienen valor, deben estar completos)
+    if (editedClient.phone2 && !isPhoneComplete(editedClient.phone2)) {
+      errors.push('Teléfono 2 debe tener 10 dígitos');
+    }
+    if (editedClient.phone3 && !isPhoneComplete(editedClient.phone3)) {
+      errors.push('Teléfono 3 debe tener 10 dígitos');
+    }
+    
+    // Validar MACs (si tienen valor, deben estar completas)
+    if (editedEquipment.antenna_mac && !isMacAddressComplete(editedEquipment.antenna_mac)) {
+      errors.push('MAC Antena debe tener 12 caracteres hexadecimales');
+    }
+    if (editedEquipment.router_mac && !isMacAddressComplete(editedEquipment.router_mac)) {
+      errors.push('MAC Router debe tener 12 caracteres hexadecimales');
+    }
+    
+    // Validar IPs (si tienen valor, deben ser válidas)
+    if (editedEquipment.antenna_ip && !isValidIPAddress(editedEquipment.antenna_ip)) {
+      errors.push('IP Antena no tiene formato válido (ej: 192.168.1.1)');
+    }
+    if (editedEquipment.router_ip && !isValidIPAddress(editedEquipment.router_ip)) {
+      errors.push('IP Router no tiene formato válido');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return; // NO GUARDAR
+    }
     
     setIsSaving(true);
     try {
