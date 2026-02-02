@@ -63,6 +63,17 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+// Función para formatear fechas en formato mexicano (dd/mm/yyyy)
+export function formatDateMX(dateString: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString + 'T00:00:00');
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
 // Función para calcular el saldo total inicial
 export function calculateInitialBalance(
   proratedAmount: number,
