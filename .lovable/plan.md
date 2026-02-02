@@ -1,52 +1,66 @@
 
-# Plan: Corregir Modal de Confirmación que Aparece Prematuramente
+# Plan: Corregir Modal de Confirmación que Aparece al Cambiar de Tab
 
 ## Problema Identificado
 
-El modal de confirmación "Confirmar Creación de Cliente" aparece cuando se navega de la pestaña "Facturación" a "Resumen", en lugar de aparecer solo al hacer clic en "Finalizar y Crear Cliente".
+El modal de confirmación sigue apareciendo cuando se cambia de la pestaña "Facturación" a "Resumen", a pesar de haber agregado `type="button"` al componente `TabsTrigger`.
 
-**Causa raíz:** El componente `TabsTrigger` de Radix UI internamente es un `<button>`, y aunque se añadió `type="button"` como prop, el componente `TabsTrigger` actual NO está pasando esa propiedad al botón interno. Por defecto, un botón dentro de un `<form>` actúa como `type="submit"`, lo que dispara `form.handleSubmit()` al hacer clic en cualquier tab.
+**Causa raíz:** El componente `TabsPrimitive.Trigger` de Radix UI puede no estar respetando correctamente la prop `type="button"` cuando está dentro de un `<form>`. El comportamiento de submit se está disparando de alguna manera.
 
 ---
 
 ## Solución
 
-### 1. Modificar el componente TabsTrigger
+### Opcion Elegida: Separar la TabsList del Form
 
-**Archivo:** `src/components/ui/tabs.tsx`
-
-Modificar el `TabsTrigger` para que siempre tenga `type="button"`, previniendo que actúe como submit:
-
-```typescript
-const TabsTrigger = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger
-    ref={ref}
-    type="button"  // <-- AGREGAR ESTO
-    className={cn(
-      "inline-flex items-center justify-center...",
-      className,
-    )}
-    {...props}
-  />
-));
-```
-
-### 2. Limpiar el código redundante
+La solución más robusta es **reestructurar el componente** para que la navegación de tabs (`TabsList` con los `TabsTrigger`) esté **fuera del `<form>`**, mientras que el contenido de cada tab permanece dentro del form.
 
 **Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
 
-Ahora que `TabsTrigger` siempre será `type="button"`, podemos quitar las props `type="button"` redundantes de los triggers (opcional, pero limpia el código):
+### Cambio Estructural
 
-```typescript
-// Antes:
-<TabsTrigger type="button" value="personal">Personal</TabsTrigger>
+```text
+ANTES:
+<Form {...form}>
+  <form onSubmit={...}>
+    <Tabs>
+      <TabsList>          <-- DENTRO del form (problema)
+        <TabsTrigger />
+      </TabsList>
+      <TabsContent>
+        {form fields}
+      </TabsContent>
+    </Tabs>
+    <DialogFooter>
+      <Button type="submit" />
+    </DialogFooter>
+  </form>
+</Form>
 
-// Después:
-<TabsTrigger value="personal">Personal</TabsTrigger>
+DESPUÉS:
+<Form {...form}>
+  <Tabs>
+    <TabsList>              <-- FUERA del form (solución)
+      <TabsTrigger />
+    </TabsList>
+    <form onSubmit={...}>
+      <TabsContent>
+        {form fields}
+      </TabsContent>
+      <DialogFooter>
+        <Button type="submit" />
+      </DialogFooter>
+    </form>
+  </Tabs>
+</Form>
 ```
+
+### Cambios Específicos
+
+1. Mover la apertura de `<Tabs>` antes del `<form>`
+2. Mantener `<TabsList>` con todos los triggers fuera del form
+3. El `<form>` solo envuelve los `<TabsContent>` y el `<DialogFooter>`
+4. Cerrar `</Tabs>` después del `</form>`
 
 ---
 
@@ -54,14 +68,36 @@ Ahora que `TabsTrigger` siempre será `type="button"`, podemos quitar las props 
 
 | Antes | Después |
 |-------|---------|
-| `TabsTrigger` no especifica `type`, hereda `submit` | `TabsTrigger` siempre tiene `type="button"` |
-| Clic en tab = dispara `form.handleSubmit()` | Clic en tab = solo cambia de pestaña |
+| TabsTrigger dentro de form | TabsTrigger fuera de form |
+| Click en tab puede disparar submit | Click en tab solo cambia de pestaña |
 | Modal aparece al navegar | Modal aparece solo con "Finalizar" |
+
+Esta es la solución más robusta porque:
+- Elimina completamente la posibilidad de que los botones de navegación disparen un submit
+- No depende de que Radix UI respete la prop `type`
+- Es un patrón común en formularios con tabs
 
 ---
 
-## Sección Técnica
+## Sección Tecnica
 
-El componente Radix `TabsPrimitive.Trigger` renderiza un `<button>`. En HTML, un `<button>` dentro de un `<form>` sin `type` explícito es `type="submit"` por defecto. Al añadir `type="button"` directamente en el componente base, garantizamos que NINGÚN TabsTrigger en toda la aplicación dispare submits accidentales.
+El formulario HTML tiene un comportamiento por defecto donde cualquier `<button>` sin `type` explícito actúa como `type="submit"`. Aunque se agregó `type="button"` al componente Radix, la biblioteca puede estar renderizando el botón de una forma que no respeta esa prop, o puede haber algún evento de click que burbujea y dispara el submit.
 
-La prop que se pasaba antes (`type="button"`) se estaba usando como una prop de React pero NO estaba siendo pasada al `<button>` del DOM porque `{...props}` no la procesaba correctamente en este contexto específico de Radix.
+Al mover los `TabsTrigger` fuera del `<form>`, eliminamos cualquier posibilidad de interacción accidental entre la navegación de tabs y el submit del formulario.
+
+Estructura final:
+
+```
+DialogContent
+├── DialogHeader
+├── Info banner
+├── Form (react-hook-form wrapper)
+│   └── Tabs
+│       ├── TabsList (FUERA del form)
+│       │   └── TabsTrigger x5
+│       └── form (HTML element)
+│           ├── TabsContent x5
+│           └── DialogFooter
+│               └── Button type="submit"
+└── ConfirmFinalizeDialog
+```
