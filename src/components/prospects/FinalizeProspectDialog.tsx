@@ -38,7 +38,8 @@ import { Loader2, CheckCircle, History, DollarSign, Calculator, X, FileText, Map
 import type { Prospect } from '@/types/database';
 import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
-import { type PhoneCountry, formatPhoneDisplay } from '@/lib/phoneUtils';
+import { type PhoneCountry, formatPhoneDisplay, isPhoneComplete } from '@/lib/phoneUtils';
+import { isValidIPAddress } from '@/lib/formatUtils';
 import { formatCurrency, calculateProration } from '@/lib/billing';
 
 interface SelectedCharge {
@@ -115,6 +116,22 @@ export function FinalizeProspectDialog({
       if (error) throw error;
       return data;
     },
+  });
+
+  // Fetch assigned technician name from prospect
+  const { data: assignedTechnician } = useQuery({
+    queryKey: ['assigned-technician', prospect?.assigned_to],
+    queryFn: async () => {
+      if (!prospect?.assigned_to) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('user_id', prospect.assigned_to)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.full_name || null;
+    },
+    enabled: !!prospect?.assigned_to,
   });
 
   // Fetch charge catalog
@@ -336,6 +353,27 @@ export function FinalizeProspectDialog({
   };
 
   const handleFinalize = async (data: FinalizeFormValues) => {
+    // VALIDACIONES OBLIGATORIAS
+    const errors: string[] = [];
+    
+    if (!isPhoneComplete(data.phone1)) {
+      errors.push('Teléfono 1 debe tener 10 dígitos');
+    }
+    if (data.phone2 && !isPhoneComplete(data.phone2)) {
+      errors.push('Teléfono 2 debe tener 10 dígitos');
+    }
+    if (data.phone3_signer && !isPhoneComplete(data.phone3_signer)) {
+      errors.push('Teléfono de quien firmará debe tener 10 dígitos');
+    }
+    if (data.antenna_ip && !isValidIPAddress(data.antenna_ip)) {
+      errors.push('IP Antena no tiene formato válido');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return;
+    }
+    
     setIsLoading(true);
     try {
       // 1. Update prospect with new data and finalize
@@ -406,6 +444,8 @@ export function FinalizeProspectDialog({
             client_id: clientData.id,
             antenna_ssid: data.ssid || null,
             antenna_ip: data.antenna_ip || null,
+            installation_date: data.installation_date,
+            installer_name: assignedTechnician || null,
           });
 
         if (equipmentError) {

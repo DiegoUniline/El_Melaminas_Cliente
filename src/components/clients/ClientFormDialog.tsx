@@ -37,7 +37,8 @@ import { Loader2, Upload, Calculator } from 'lucide-react';
 import { calculateProration, formatCurrency, calculateInitialBalance } from '@/lib/billing';
 import type { Client, ClientBilling, Equipment } from '@/types/database';
 import { PhoneInput } from '@/components/shared/PhoneInput';
-import { PhoneCountry } from '@/lib/phoneUtils';
+import { PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
+import { isMacAddressComplete, isValidIPAddress } from '@/lib/formatUtils';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
 
@@ -314,6 +315,36 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
   };
 
   const onSubmit = async (data: ClientFormData) => {
+    // VALIDACIONES OBLIGATORIAS
+    const errors: string[] = [];
+    
+    if (!isPhoneComplete(data.phone1)) {
+      errors.push('Teléfono 1 debe tener 10 dígitos');
+    }
+    if (data.phone2 && !isPhoneComplete(data.phone2)) {
+      errors.push('Teléfono 2 debe tener 10 dígitos');
+    }
+    if (data.phone3 && !isPhoneComplete(data.phone3)) {
+      errors.push('Teléfono 3 debe tener 10 dígitos');
+    }
+    if (data.antenna_mac && !isMacAddressComplete(data.antenna_mac)) {
+      errors.push('MAC Antena debe tener 12 caracteres hexadecimales');
+    }
+    if (data.router_mac && !isMacAddressComplete(data.router_mac)) {
+      errors.push('MAC Router debe tener 12 caracteres hexadecimales');
+    }
+    if (data.antenna_ip && !isValidIPAddress(data.antenna_ip)) {
+      errors.push('IP Antena no tiene formato válido');
+    }
+    if (data.router_ip && !isValidIPAddress(data.router_ip)) {
+      errors.push('IP Router no tiene formato válido');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return;
+    }
+    
     setIsSubmitting(true);
 
     try {

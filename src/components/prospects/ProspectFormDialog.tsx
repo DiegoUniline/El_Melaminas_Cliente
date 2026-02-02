@@ -33,7 +33,8 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
-import { PhoneCountry, formatPhoneNumber } from '@/lib/phoneUtils';
+import { PhoneCountry, formatPhoneNumber, isPhoneComplete } from '@/lib/phoneUtils';
+import { isValidIPAddress } from '@/lib/formatUtils';
 
 const prospectSchema = z.object({
   first_name: z.string().min(1, 'El nombre es requerido').max(100),
@@ -118,6 +119,27 @@ export function ProspectFormDialog({
   });
 
   const onSubmit = async (values: ProspectFormValues) => {
+    // VALIDACIONES OBLIGATORIAS
+    const errors: string[] = [];
+    
+    if (!isPhoneComplete(values.phone1)) {
+      errors.push('Teléfono 1 debe tener 10 dígitos');
+    }
+    if (values.phone2 && !isPhoneComplete(values.phone2)) {
+      errors.push('Teléfono 2 debe tener 10 dígitos');
+    }
+    if (values.phone3_signer && !isPhoneComplete(values.phone3_signer)) {
+      errors.push('Teléfono de quien firmará debe tener 10 dígitos');
+    }
+    if (values.antenna_ip && !isValidIPAddress(values.antenna_ip)) {
+      errors.push('IP Antena no tiene formato válido');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const { error } = await supabase.from('prospects').insert({
