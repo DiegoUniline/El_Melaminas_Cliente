@@ -40,7 +40,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
 import { type PhoneCountry, formatPhoneDisplay, isPhoneComplete } from '@/lib/phoneUtils';
 import { isValidIPAddress } from '@/lib/formatUtils';
-import { formatCurrency, calculateProration } from '@/lib/billing';
+import { formatCurrency, calculateProration, formatDateMX } from '@/lib/billing';
 import { ConfirmFinalizeDialog } from './ConfirmFinalizeDialog';
 
 interface SelectedCharge {
@@ -1171,7 +1171,7 @@ export function FinalizeProspectDialog({
                         </div>
                         <div className="flex justify-between text-muted-foreground">
                           <span>Fecha de Instalación:</span>
-                          <span>{form.watch('installation_date')}</span>
+                          <span>{formatDateMX(form.watch('installation_date'))}</span>
                         </div>
                         <div className="flex justify-between text-muted-foreground">
                           <span>Día de Corte:</span>
