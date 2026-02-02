@@ -31,6 +31,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, Edit } from 'lucide-react';
 import { PhoneInput } from '@/components/shared/PhoneInput';
+import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
 import { Separator } from '@/components/ui/separator';
 import { PhoneCountry } from '@/lib/phoneUtils';
@@ -571,7 +572,10 @@ export function EditProspectDialog({
                     <FormItem>
                       <FormLabel>IP Antena</FormLabel>
                       <FormControl>
-                        <Input placeholder="192.168.1.1" {...field} />
+                        <IpAddressInput
+                          value={field.value || ''}
+                          onChange={field.onChange}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

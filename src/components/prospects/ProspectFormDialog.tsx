@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { PhoneInput } from '@/components/shared/PhoneInput';
+import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { PhoneCountry, formatPhoneNumber } from '@/lib/phoneUtils';
 
 const prospectSchema = z.object({
@@ -466,7 +467,10 @@ export function ProspectFormDialog({
                     <FormItem>
                       <FormLabel>IP Antena</FormLabel>
                       <FormControl>
-                        <Input placeholder="192.168.1.1" {...field} />
+                        <IpAddressInput
+                          value={field.value || ''}
+                          onChange={field.onChange}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

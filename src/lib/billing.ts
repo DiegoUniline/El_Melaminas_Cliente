@@ -21,10 +21,10 @@ export function calculateProration(
     // Cobrar del día de instalación al día de corte del siguiente mes
     firstBillingDate = new Date(installYear, installMonth + 1, billingDay);
     
-    // Calcular días hasta fin de mes + días hasta el día ANTERIOR al corte del siguiente mes
+    // Calcular días hasta fin de mes (INCLUYENDO el día de instalación) + días hasta el día ANTERIOR al corte del siguiente mes
     // El día de corte inicia la nueva mensualidad, así que no se cuenta en el prorrateo
     const lastDayOfMonth = new Date(installYear, installMonth + 1, 0).getDate();
-    const daysUntilEndOfMonth = lastDayOfMonth - installDay;
+    const daysUntilEndOfMonth = lastDayOfMonth - installDay + 1; // +1 para incluir el día de instalación
     daysCharged = daysUntilEndOfMonth + (billingDay - 1);
   }
 

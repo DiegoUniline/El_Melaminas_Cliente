@@ -32,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Loader2, Wallet, Info } from 'lucide-react';
 import { ComboboxWithCreate, CatalogItem } from '@/components/shared/ComboboxWithCreate';
+import { PhoneInput } from '@/components/shared/PhoneInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { Client, ClientBilling } from '@/types/database';
@@ -550,7 +551,13 @@ export function PaymentFormDialog({ client, open, onOpenChange, onSuccess, effec
                   <FormItem>
                     <FormLabel>Teléfono del Pagador</FormLabel>
                     <FormControl>
-                      <Input {...field} type="tel" />
+                      <PhoneInput
+                        value={field.value || ''}
+                        onChange={field.onChange}
+                        country="MX"
+                        onCountryChange={() => {}}
+                        placeholder="317-131-5782"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
