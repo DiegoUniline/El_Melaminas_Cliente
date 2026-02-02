@@ -1,91 +1,102 @@
 
-# Plan: Corregir Modal de Confirmación que Aparece al Cambiar de Tab
+# Plan: Corregir el Modal de Confirmación que Aparece al Navegar entre Tabs
 
 ## Problema Identificado
 
-El modal de confirmación sigue apareciendo cuando se cambia de la pestaña "Facturación" a "Resumen", a pesar de haber agregado `type="button"` al componente `TabsTrigger`.
+El modal de confirmación aparece cuando el usuario hace clic en "Siguiente" estando en la pestaña "Facturación" para ir a "Resumen". Esto no debería pasar - el modal solo debe aparecer al hacer clic en "Finalizar y Crear Cliente".
 
-**Causa raíz:** El componente `TabsPrimitive.Trigger` de Radix UI puede no estar respetando correctamente la prop `type="button"` cuando está dentro de un `<form>`. El comportamiento de submit se está disparando de alguna manera.
+### Análisis del Flujo Actual
 
----
+```
+Tab: Facturación
+  → Usuario hace clic en "Siguiente" (Button type="button")
+  → handleNext() se ejecuta
+  → setActiveTab('summary')
+  → Re-render
+  → isLastTab = true
+  → [PROBLEMA] El modal aparece
+```
 
-## Solución
+### Causa Raíz Probables
 
-### Opcion Elegida: Separar la TabsList del Form
+1. **Event Bubbling**: El evento del clic puede estar burbujeando y disparando un submit del formulario
+2. **React Hook Form**: Puede haber alguna validación automática que dispara el submit
+3. **Radix/Browser Behavior**: Comportamiento inesperado del navegador
 
-La solución más robusta es **reestructurar el componente** para que la navegación de tabs (`TabsList` con los `TabsTrigger`) esté **fuera del `<form>`**, mientras que el contenido de cada tab permanece dentro del form.
+## Solución Propuesta
+
+### Enfoque: Prevenir el Submit en handleNext
+
+Modificar la función `handleNext()` para que explícitamente prevenga cualquier evento de submit que pudiera estar ocurriendo, y también agregar `preventDefault()` en el propio botón.
+
+### Cambios en el Archivo
 
 **Archivo:** `src/components/prospects/FinalizeProspectDialog.tsx`
 
-### Cambio Estructural
+#### Cambio 1: Modificar handleNext para prevenir submit
 
-```text
-ANTES:
-<Form {...form}>
-  <form onSubmit={...}>
-    <Tabs>
-      <TabsList>          <-- DENTRO del form (problema)
-        <TabsTrigger />
-      </TabsList>
-      <TabsContent>
-        {form fields}
-      </TabsContent>
-    </Tabs>
-    <DialogFooter>
-      <Button type="submit" />
-    </DialogFooter>
-  </form>
-</Form>
-
-DESPUÉS:
-<Form {...form}>
-  <Tabs>
-    <TabsList>              <-- FUERA del form (solución)
-      <TabsTrigger />
-    </TabsList>
-    <form onSubmit={...}>
-      <TabsContent>
-        {form fields}
-      </TabsContent>
-      <DialogFooter>
-        <Button type="submit" />
-      </DialogFooter>
-    </form>
-  </Tabs>
-</Form>
+```typescript
+// Líneas 222-227: Modificar handleNext
+const handleNext = (e?: React.MouseEvent) => {
+  e?.preventDefault();
+  e?.stopPropagation();
+  const currentIndex = TABS.indexOf(activeTab);
+  if (currentIndex < TABS.length - 1) {
+    setActiveTab(TABS[currentIndex + 1]);
+  }
+};
 ```
 
-### Cambios Específicos
+#### Cambio 2: Pasar el evento al handler del botón
 
-1. Mover la apertura de `<Tabs>` antes del `<form>`
-2. Mantener `<TabsList>` con todos los triggers fuera del form
-3. El `<form>` solo envuelve los `<TabsContent>` y el `<DialogFooter>`
-4. Cerrar `</Tabs>` después del `</form>`
+```typescript
+// Línea 1279: Modificar el onClick del botón Siguiente
+<Button type="button" onClick={(e) => handleNext(e)}>
+  Siguiente
+</Button>
+```
 
----
+#### Cambio 3: Agregar preventDefault en el evento del form
+
+Como respaldo adicional, modificar el form para que solo procese submits reales:
+
+```typescript
+// Línea 599-607: Modificar el form
+<form 
+  onSubmit={(e) => {
+    e.preventDefault();
+    // Solo procesar si realmente estamos en la última tab
+    if (activeTab === 'summary') {
+      form.handleSubmit(handleFormSubmit)(e);
+    }
+  }} 
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+      e.preventDefault();
+    }
+  }}
+  className="space-y-4"
+>
+```
 
 ## Por Qué Esto Resuelve el Problema
 
 | Antes | Después |
 |-------|---------|
-| TabsTrigger dentro de form | TabsTrigger fuera de form |
-| Click en tab puede disparar submit | Click en tab solo cambia de pestaña |
-| Modal aparece al navegar | Modal aparece solo con "Finalizar" |
+| handleNext no previene eventos | handleNext previene propagación |
+| Form procesa cualquier submit | Form solo procesa submit en tab final |
+| Modal puede aparecer accidentalmente | Modal solo aparece con acción explícita |
 
-Esta es la solución más robusta porque:
-- Elimina completamente la posibilidad de que los botones de navegación disparen un submit
-- No depende de que Radix UI respete la prop `type`
-- Es un patrón común en formularios con tabs
+Esta solución tiene múltiples capas de protección:
+1. El botón "Siguiente" previene cualquier evento de submit
+2. El formulario ignora submits que no vengan del tab final
+3. Se detiene la propagación del evento
 
 ---
 
-## Sección Tecnica
+## Sección Técnica
 
-El formulario HTML tiene un comportamiento por defecto donde cualquier `<button>` sin `type` explícito actúa como `type="submit"`. Aunque se agregó `type="button"` al componente Radix, la biblioteca puede estar renderizando el botón de una forma que no respeta esa prop, o puede haber algún evento de click que burbujea y dispara el submit.
-
-Al mover los `TabsTrigger` fuera del `<form>`, eliminamos cualquier posibilidad de interacción accidental entre la navegación de tabs y el submit del formulario.
-
-Estructura final:
+### Estructura del Componente
 
 ```
 DialogContent
@@ -93,11 +104,30 @@ DialogContent
 ├── Info banner
 ├── Form (react-hook-form wrapper)
 │   └── Tabs
-│       ├── TabsList (FUERA del form)
-│       │   └── TabsTrigger x5
+│       ├── TabsList (fuera del form HTML)
+│       │   └── TabsTrigger x5 (todos con type="button")
 │       └── form (HTML element)
 │           ├── TabsContent x5
 │           └── DialogFooter
-│               └── Button type="submit"
-└── ConfirmFinalizeDialog
+│               ├── Button "Cancelar" (type="button")
+│               ├── Button "Anterior" (type="button", condicional)
+│               └── Button "Siguiente/Finalizar" 
+│                   - En tabs 1-4: type="button", onClick={handleNext}
+│                   - En tab 5: type="submit"
+└── ConfirmFinalizeDialog (modal de confirmación)
 ```
+
+### Flujo de Eventos Corregido
+
+1. Usuario en tab "Facturación" hace clic en "Siguiente"
+2. `onClick={(e) => handleNext(e)}` se ejecuta
+3. `e.preventDefault()` previene cualquier comportamiento por defecto
+4. `e.stopPropagation()` detiene el bubbling
+5. `setActiveTab('summary')` cambia a la pestaña final
+6. El componente se re-renderiza con `isLastTab = true`
+7. El botón ahora es "Finalizar y Crear Cliente" con `type="submit"`
+8. **No hay submit** - el usuario solo navegó
+
+### Respaldo: Validación en onSubmit
+
+Si por alguna razón un submit se dispara en una tab que no es la final, el handler del form lo ignora completamente, previniendo que el modal aparezca.
