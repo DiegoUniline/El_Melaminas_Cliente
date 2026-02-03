@@ -26,6 +26,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Wifi, Router } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
+import { MacAddressInput } from '@/components/shared/MacAddressInput';
+import { IpAddressInput } from '@/components/shared/IpAddressInput';
+import { isValidIPAddress, isMacAddressComplete } from '@/lib/formatUtils';
 import type { Equipment } from '@/types/database';
 
 interface ChangeEquipmentDialogProps {
@@ -99,6 +102,30 @@ export function ChangeEquipmentDialog({
   };
 
   const handleSubmit = async () => {
+    // Validaciones
+    const errors: string[] = [];
+    
+    if (changeType === 'antenna') {
+      if (newAntenna.mac && !isMacAddressComplete(newAntenna.mac)) {
+        errors.push('MAC de antena debe tener 12 caracteres hexadecimales');
+      }
+      if (newAntenna.ip && !isValidIPAddress(newAntenna.ip)) {
+        errors.push('IP de antena no tiene formato válido');
+      }
+    } else {
+      if (newRouter.mac && !isMacAddressComplete(newRouter.mac)) {
+        errors.push('MAC de router debe tener 12 caracteres hexadecimales');
+      }
+      if (newRouter.ip && !isValidIPAddress(newRouter.ip)) {
+        errors.push('IP de router no tiene formato válido');
+      }
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(err => toast.error(err));
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
       const isAntennaChange = changeType === 'antenna';
@@ -290,21 +317,21 @@ export function ChangeEquipmentDialog({
                     </div>
                     <div>
                       <Label>MAC</Label>
-                      <Input 
+                      <MacAddressInput 
                         value={newAntenna.mac} 
-                        onChange={(e) => setNewAntenna(prev => ({ ...prev, mac: e.target.value }))}
+                        onChange={(val) => setNewAntenna(prev => ({ ...prev, mac: val }))}
                       />
                     </div>
                     <div>
                       <Label>IP</Label>
-                      <Input 
+                      <IpAddressInput 
                         value={newAntenna.ip} 
-                        onChange={(e) => setNewAntenna(prev => ({ ...prev, ip: e.target.value }))}
+                        onChange={(val) => setNewAntenna(prev => ({ ...prev, ip: val }))}
                       />
                     </div>
                     <div>
                       <Label>SSID</Label>
-                      <Input 
+                      <Input
                         value={newAntenna.ssid} 
                         onChange={(e) => setNewAntenna(prev => ({ ...prev, ssid: e.target.value }))}
                       />
@@ -362,21 +389,21 @@ export function ChangeEquipmentDialog({
                     </div>
                     <div>
                       <Label>MAC</Label>
-                      <Input 
+                      <MacAddressInput 
                         value={newRouter.mac} 
-                        onChange={(e) => setNewRouter(prev => ({ ...prev, mac: e.target.value }))}
+                        onChange={(val) => setNewRouter(prev => ({ ...prev, mac: val }))}
                       />
                     </div>
                     <div>
                       <Label>IP</Label>
-                      <Input 
+                      <IpAddressInput 
                         value={newRouter.ip} 
-                        onChange={(e) => setNewRouter(prev => ({ ...prev, ip: e.target.value }))}
+                        onChange={(val) => setNewRouter(prev => ({ ...prev, ip: val }))}
                       />
                     </div>
                     <div>
                       <Label>Serie</Label>
-                      <Input 
+                      <Input
                         value={newRouter.serial} 
                         onChange={(e) => setNewRouter(prev => ({ ...prev, serial: e.target.value }))}
                       />
