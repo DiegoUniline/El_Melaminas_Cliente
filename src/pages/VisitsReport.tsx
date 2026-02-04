@@ -2,11 +2,10 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -25,50 +24,20 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   MapPin, 
-  Calendar, 
-  Clock, 
-  User, 
-  Filter,
-  Download,
   Map as MapIcon,
   List,
   Timer,
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Navigation
+  Navigation,
+  ExternalLink,
+  Clock,
+  User
 } from 'lucide-react';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-// Fix for default marker icons in Leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Custom marker icons
-const createIcon = (color: string) => new L.Icon({
-  iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-const icons = {
-  completed: createIcon('green'),
-  in_progress: createIcon('yellow'),
-  cancelled: createIcon('red'),
-  no_one_home: createIcon('orange'),
-};
 
 const SERVICE_TYPES = {
   installation: { label: 'Instalación', color: 'bg-blue-500' },
@@ -111,22 +80,8 @@ interface VisitService {
   employee_name?: string;
 }
 
-// Map bounds fitter component
-function MapBoundsFitter({ positions }: { positions: [number, number][] }) {
-  const map = useMap();
-  
-  useMemo(() => {
-    if (positions.length > 0) {
-      const bounds = L.latLngBounds(positions.map(p => L.latLng(p[0], p[1])));
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [positions, map]);
-  
-  return null;
-}
-
 export default function VisitsReport() {
-  const [viewMode, setViewMode] = useState<'map' | 'table'>('map');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [dateFrom, setDateFrom] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 7);
@@ -205,9 +160,6 @@ export default function VisitsReport() {
 
   // Services with GPS
   const servicesWithGPS = filteredServices.filter(s => s.visit_latitude && s.visit_longitude);
-  
-  // Map positions
-  const mapPositions = servicesWithGPS.map(s => [s.visit_latitude!, s.visit_longitude!] as [number, number]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -260,17 +212,19 @@ export default function VisitsReport() {
     return service.completed_notes?.includes('[No había nadie');
   };
 
-  const getMarkerIcon = (service: VisitService) => {
-    if (isNoOneHome(service)) return icons.no_one_home;
-    if (service.status === 'completed') return icons.completed;
-    if (service.status === 'in_progress') return icons.in_progress;
-    return icons.cancelled;
+  const openInMaps = (lat: number, lng: number) => {
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
   };
 
-  // Default center (Mexico)
-  const defaultCenter: [number, number] = mapPositions.length > 0 
-    ? [mapPositions[0][0], mapPositions[0][1]]
-    : [23.6345, -102.5528];
+  const openAllInMaps = () => {
+    if (servicesWithGPS.length === 0) return;
+    // Create a Google Maps URL with all markers
+    const markers = servicesWithGPS
+      .slice(0, 10) // Limit to 10 markers for URL length
+      .map(s => `${s.visit_latitude},${s.visit_longitude}`)
+      .join('/');
+    window.open(`https://www.google.com/maps/dir/${markers}`, '_blank');
+  };
 
   return (
     <AppLayout title="Reporte de Visitas">
@@ -381,9 +335,9 @@ export default function VisitsReport() {
                 </Select>
                 <div className="flex border rounded-md">
                   <Button
-                    variant={viewMode === 'map' ? 'secondary' : 'ghost'}
+                    variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
                     size="sm"
-                    onClick={() => setViewMode('map')}
+                    onClick={() => setViewMode('cards')}
                   >
                     <MapIcon className="h-4 w-4" />
                   </Button>
@@ -401,72 +355,110 @@ export default function VisitsReport() {
         </Card>
 
         {/* Content */}
-        {viewMode === 'map' ? (
-          <Card>
-            <CardContent className="p-0">
-              <div className="h-[500px] rounded-lg overflow-hidden">
-                {servicesWithGPS.length > 0 ? (
-                  <MapContainer
-                    center={defaultCenter}
-                    zoom={12}
-                    style={{ height: '100%', width: '100%' }}
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <MapBoundsFitter positions={mapPositions} />
-                    {servicesWithGPS.map((service) => (
-                      <Marker
-                        key={service.id}
-                        position={[service.visit_latitude!, service.visit_longitude!]}
-                        icon={getMarkerIcon(service)}
-                      >
-                        <Popup>
-                          <div className="space-y-1 min-w-[200px]">
-                            <p className="font-semibold">{service.title}</p>
-                            <p className="text-sm">{getPersonName(service)}</p>
-                            <p className="text-xs text-gray-500">{getAddress(service)}</p>
-                            <div className="flex items-center gap-2 text-xs">
-                              <Badge className={cn(SERVICE_STATUS[service.status]?.color, 'text-white text-xs')}>
-                                {SERVICE_STATUS[service.status]?.label}
-                              </Badge>
-                              {isNoOneHome(service) && (
-                                <Badge variant="outline" className="text-orange-600">Sin nadie</Badge>
-                              )}
-                            </div>
-                            <p className="text-xs">
-                              <strong>Técnico:</strong> {service.employee_name}
-                            </p>
-                            {service.visit_started_at && (
-                              <p className="text-xs">
-                                <strong>Llegada:</strong> {format(parseISO(service.visit_started_at), "dd/MM HH:mm")}
-                              </p>
-                            )}
-                            {service.completed_at && (
-                              <p className="text-xs">
-                                <strong>Duración:</strong> {getDuration(service)}
-                              </p>
-                            )}
-                            <p className="text-xs text-gray-400">
-                              GPS: {service.visit_latitude?.toFixed(6)}, {service.visit_longitude?.toFixed(6)}
-                            </p>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
-                  </MapContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center bg-muted/20">
-                    <div className="text-center">
-                      <MapPin className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-muted-foreground">No hay visitas con GPS en el rango seleccionado</p>
-                    </div>
-                  </div>
-                )}
+        {viewMode === 'cards' ? (
+          <div className="space-y-4">
+            {/* Map action button */}
+            {servicesWithGPS.length > 0 && (
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={openAllInMaps}>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Ver todas en Google Maps ({servicesWithGPS.length})
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            )}
+            
+            {/* Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredServices.map((service) => (
+                <Card key={service.id} className={cn(
+                  "overflow-hidden",
+                  isNoOneHome(service) && "border-orange-300",
+                  service.status === 'completed' && !isNoOneHome(service) && "border-green-300"
+                )}>
+                  <div className={cn(
+                    "h-1",
+                    isNoOneHome(service) ? "bg-orange-500" : SERVICE_STATUS[service.status]?.color
+                  )} />
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{service.title}</p>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {getPersonName(service)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 items-end">
+                        <Badge className={cn(SERVICE_STATUS[service.status]?.color, 'text-white text-xs')}>
+                          {SERVICE_STATUS[service.status]?.label}
+                        </Badge>
+                        {isNoOneHome(service) && (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                            Sin nadie
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <span className="truncate">{getAddress(service)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span>{service.employee_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <span>
+                          {format(parseISO(service.scheduled_date), "dd/MM/yyyy")}
+                          {service.visit_started_at && (
+                            <> • Llegada: {format(parseISO(service.visit_started_at), "HH:mm")}</>
+                          )}
+                        </span>
+                      </div>
+                      {service.completed_at && (
+                        <div className="flex items-center gap-2">
+                          <Timer className="h-4 w-4 text-muted-foreground" />
+                          <span>Duración: {getDuration(service)}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {service.visit_latitude && service.visit_longitude && (
+                      <div className="pt-2 border-t">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
+                        >
+                          <MapPin className="h-4 w-4 mr-2 text-green-500" />
+                          Ver ubicación GPS
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {service.visit_latitude?.toFixed(4)}, {service.visit_longitude?.toFixed(4)}
+                          </span>
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {service.completed_notes && (
+                      <p className="text-xs text-muted-foreground italic border-t pt-2">
+                        "{service.completed_notes}"
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+              
+              {filteredServices.length === 0 && (
+                <div className="col-span-full text-center py-12 text-muted-foreground">
+                  <Navigation className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No hay visitas en el rango seleccionado</p>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <Card>
             <CardContent className="p-0">
@@ -536,12 +528,7 @@ export default function VisitsReport() {
                               variant="ghost"
                               size="sm"
                               className="h-7 px-2"
-                              onClick={() => {
-                                window.open(
-                                  `https://www.google.com/maps?q=${service.visit_latitude},${service.visit_longitude}`,
-                                  '_blank'
-                                );
-                              }}
+                              onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
                             >
                               <MapPin className="h-4 w-4 text-green-500" />
                             </Button>
