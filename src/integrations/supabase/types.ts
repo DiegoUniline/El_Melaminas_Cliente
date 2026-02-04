@@ -882,6 +882,9 @@ export type Database = {
           status: Database["public"]["Enums"]["service_status"]
           title: string
           updated_at: string
+          visit_latitude: number | null
+          visit_longitude: number | null
+          visit_started_at: string | null
         }
         Insert: {
           assigned_to: string
@@ -902,6 +905,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["service_status"]
           title: string
           updated_at?: string
+          visit_latitude?: number | null
+          visit_longitude?: number | null
+          visit_started_at?: string | null
         }
         Update: {
           assigned_to?: string
@@ -922,6 +928,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["service_status"]
           title?: string
           updated_at?: string
+          visit_latitude?: number | null
+          visit_longitude?: number | null
+          visit_started_at?: string | null
         }
         Relationships: [
           {
