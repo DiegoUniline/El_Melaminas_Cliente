@@ -635,21 +635,7 @@ export default function Services() {
 
   return (
     <AppLayout title="Agenda de Servicios">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <p className="text-muted-foreground">
-              Gestiona los servicios programados para clientes y prospectos
-            </p>
-          </div>
-          {isAdmin && (
-            <Button onClick={() => setDialogOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nuevo Servicio
-            </Button>
-          )}
-        </div>
+      <div className="space-y-4">
 
         {/* Search and Filters Panel */}
         <Card>
@@ -662,6 +648,12 @@ export default function Services() {
                   placeholder="Buscar por título, cliente, dirección, técnico..."
                 />
               </div>
+              {isAdmin && (
+                <Button onClick={() => setDialogOpen(true)} className="gap-2 shrink-0">
+                  <Plus className="h-4 w-4" />
+                  Nuevo Servicio
+                </Button>
+              )}
               <div className="flex border rounded-md">
                 <Button
                   variant={viewMode === 'schedule' ? 'secondary' : 'ghost'}
