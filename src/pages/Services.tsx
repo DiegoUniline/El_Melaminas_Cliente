@@ -214,6 +214,25 @@ export default function Services() {
     },
   });
 
+  // Helper functions (defined before useMemo to avoid initialization errors)
+  const getPersonName = (service: ScheduledService) => {
+    if (service.clients) {
+      return `${service.clients.first_name} ${service.clients.last_name_paterno}`;
+    }
+    if (service.prospects) {
+      return `${service.prospects.first_name} ${service.prospects.last_name_paterno} (Prospecto)`;
+    }
+    return 'Sin asignar';
+  };
+
+  const getAddress = (service: ScheduledService) => {
+    const person = service.clients || service.prospects;
+    if (person) {
+      return `${person.street} #${person.exterior_number}, ${person.neighborhood}`;
+    }
+    return '';
+  };
+
   // Filtered services
   const filteredServices = useMemo(() => {
     return services.filter(service => {
@@ -397,23 +416,6 @@ export default function Services() {
     }
   };
 
-  const getPersonName = (service: ScheduledService) => {
-    if (service.clients) {
-      return `${service.clients.first_name} ${service.clients.last_name_paterno}`;
-    }
-    if (service.prospects) {
-      return `${service.prospects.first_name} ${service.prospects.last_name_paterno} (Prospecto)`;
-    }
-    return 'Sin asignar';
-  };
-
-  const getAddress = (service: ScheduledService) => {
-    const person = service.clients || service.prospects;
-    if (person) {
-      return `${person.street} #${person.exterior_number}, ${person.neighborhood}`;
-    }
-    return '';
-  };
 
   const clearFilters = () => {
     setSearchQuery('');
