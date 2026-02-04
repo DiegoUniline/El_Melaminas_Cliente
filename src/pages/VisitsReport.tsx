@@ -76,6 +76,9 @@ interface VisitService {
   visit_longitude: number | null;
   completed_at: string | null;
   completed_notes: string | null;
+  work_performed: string | null;
+  received_by_name: string | null;
+  service_acknowledged: boolean | null;
   clients?: { first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string; city: string } | null;
   prospects?: { first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string; city: string } | null;
   employee_name?: string;
@@ -457,6 +460,25 @@ export default function VisitsReport() {
                                     <p><strong>Duración:</strong> {getDuration(service)}</p>
                                   )}
                                 </div>
+                                {/* Detalles de trabajo completado */}
+                                {service.status === 'completed' && (service.work_performed || service.received_by_name) && (
+                                  <div className="border-t pt-2 mt-2 space-y-1">
+                                    {service.work_performed && (
+                                      <div>
+                                        <p className="text-xs font-semibold text-muted-foreground">Trabajo realizado:</p>
+                                        <p className="text-xs">{service.work_performed}</p>
+                                      </div>
+                                    )}
+                                    {service.received_by_name && (
+                                      <p className="text-xs"><strong>Recibió:</strong> {service.received_by_name}</p>
+                                    )}
+                                    {service.service_acknowledged && (
+                                      <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-600 border-green-500/30">
+                                        ✓ Confirmado
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </Overlay>
