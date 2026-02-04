@@ -21,6 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { 
   Calendar, 
   Clock, 
@@ -38,7 +41,9 @@ import {
   Users,
   ClipboardList,
   AlertCircle,
-  Navigation
+  Navigation,
+  Info,
+  PenLine
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -135,6 +140,9 @@ export default function TechnicianDashboard() {
   const [selectedService, setSelectedService] = useState<ScheduledService | null>(null);
   const [completedNotes, setCompletedNotes] = useState('');
   const [completionReason, setCompletionReason] = useState('completed');
+  const [workPerformed, setWorkPerformed] = useState('');
+  const [receivedByName, setReceivedByName] = useState('');
+  const [serviceAcknowledged, setServiceAcknowledged] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailService, setDetailService] = useState<ScheduledService | null>(null);
   const [prospectDetailOpen, setProspectDetailOpen] = useState(false);
@@ -214,7 +222,10 @@ export default function TechnicianDashboard() {
       notes,
       visit_started_at,
       visit_latitude,
-      visit_longitude
+      visit_longitude,
+      work_performed,
+      received_by_name,
+      service_acknowledged
     }: { 
       id: string; 
       status: ServiceStatus; 
@@ -222,6 +233,9 @@ export default function TechnicianDashboard() {
       visit_started_at?: string;
       visit_latitude?: number;
       visit_longitude?: number;
+      work_performed?: string;
+      received_by_name?: string;
+      service_acknowledged?: boolean;
     }) => {
       const updateData: Record<string, unknown> = { status };
       
@@ -234,6 +248,9 @@ export default function TechnicianDashboard() {
       if (status === 'completed') {
         updateData.completed_at = new Date().toISOString();
         updateData.completed_notes = notes || null;
+        updateData.work_performed = work_performed || null;
+        updateData.received_by_name = received_by_name || null;
+        updateData.service_acknowledged = service_acknowledged || false;
       }
       
       const { error } = await supabase
@@ -250,6 +267,9 @@ export default function TechnicianDashboard() {
       setSelectedService(null);
       setCompletedNotes('');
       setCompletionReason('completed');
+      setWorkPerformed('');
+      setReceivedByName('');
+      setServiceAcknowledged(false);
       setStartingService(null);
       setGpsLoading(false);
     },
@@ -313,7 +333,10 @@ export default function TechnicianDashboard() {
       updateStatusMutation.mutate({ 
         id: selectedService.id, 
         status: 'completed',
-        notes: finalNotes 
+        notes: finalNotes,
+        work_performed: workPerformed,
+        received_by_name: receivedByName,
+        service_acknowledged: serviceAcknowledged
       });
     }
   };
@@ -660,21 +683,40 @@ export default function TechnicianDashboard() {
 
       {/* Service Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-md mx-4">
+        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{detailService?.title}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5" />
+              Detalles del Servicio
+            </DialogTitle>
           </DialogHeader>
           {detailService && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge className={SERVICE_TYPES[detailService.service_type]?.color || 'bg-slate-500'}>
-                  {SERVICE_TYPES[detailService.service_type]?.label || 'Otro'}
-                </Badge>
-                <Badge variant={detailService.status === 'in_progress' ? 'default' : 'secondary'}>
-                  {SERVICE_STATUS[detailService.status]?.label}
-                </Badge>
+              {/* Title and Status */}
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <h3 className="font-semibold text-lg">{detailService.title}</h3>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge className={SERVICE_TYPES[detailService.service_type]?.color || 'bg-slate-500'}>
+                    {SERVICE_TYPES[detailService.service_type]?.label || 'Otro'}
+                  </Badge>
+                  <Badge variant={detailService.status === 'in_progress' ? 'default' : 'secondary'}>
+                    {SERVICE_STATUS[detailService.status]?.label}
+                  </Badge>
+                </div>
               </div>
 
+              {/* Description / Problem - Highlighted Section */}
+              {detailService.description && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="h-4 w-4 text-yellow-600" />
+                    <span className="font-medium text-yellow-700 dark:text-yellow-400 text-sm">Descripción / Problema</span>
+                  </div>
+                  <p className="text-sm">{detailService.description}</p>
+                </div>
+              )}
+
+              {/* Contact Info */}
               <div className="space-y-3">
                 <div className="flex items-start gap-3">
                   <User className="h-5 w-5 text-muted-foreground mt-0.5" />
@@ -690,7 +732,7 @@ export default function TechnicianDashboard() {
                   <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <a 
                     href={`tel:${getPersonPhone(detailService)}`}
-                    className="text-primary hover:underline"
+                    className="text-primary hover:underline font-medium"
                   >
                     {getPersonPhone(detailService)}
                   </a>
@@ -715,17 +757,21 @@ export default function TechnicianDashboard() {
                   </div>
                 )}
 
-                {detailService.description && (
+                {detailService.estimated_duration && (
                   <div className="flex items-start gap-3">
-                    <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
-                    <p className="text-sm text-muted-foreground">{detailService.description}</p>
+                    <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Duración estimada: {detailService.estimated_duration} minutos
+                    </p>
                   </div>
                 )}
 
                 {detailService.charge_amount && detailService.charge_amount > 0 && (
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                    <p className="font-medium">Cobrar: {formatCurrency(detailService.charge_amount)}</p>
+                  <div className="flex items-start gap-3 bg-yellow-100 dark:bg-yellow-900/30 p-2 rounded">
+                    <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    <p className="font-semibold text-yellow-700 dark:text-yellow-400">
+                      💰 Cobrar: {formatCurrency(detailService.charge_amount)}
+                    </p>
                   </div>
                 )}
               </div>
@@ -862,17 +908,17 @@ export default function TechnicianDashboard() {
 
       {/* Complete Service Dialog */}
       <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
-        <DialogContent className="max-w-md mx-4">
+        <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Completar Servicio</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              ¿Completar el servicio "{selectedService?.title}"?
+              Servicio: "{selectedService?.title}"
             </p>
             
             <div className="space-y-2">
-              <label className="text-sm font-medium">Motivo de finalización</label>
+              <Label className="text-sm font-medium">Motivo de finalización</Label>
               <Select value={completionReason} onValueChange={setCompletionReason}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona el motivo" />
@@ -887,15 +933,66 @@ export default function TechnicianDashboard() {
               </Select>
             </div>
             
-            <Textarea
-              placeholder={completionReason === 'no_one_home' 
-                ? "Describe la situación (opcional)" 
-                : "Notas del servicio completado (opcional)"
-              }
-              value={completedNotes}
-              onChange={(e) => setCompletedNotes(e.target.value)}
-              rows={3}
-            />
+            {completionReason === 'completed' && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    <PenLine className="h-4 w-4 inline mr-1" />
+                    ¿Qué trabajo se realizó?
+                  </Label>
+                  <Textarea
+                    placeholder="Describe el trabajo realizado..."
+                    value={workPerformed}
+                    onChange={(e) => setWorkPerformed(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    <User className="h-4 w-4 inline mr-1" />
+                    ¿Quién recibió el servicio?
+                  </Label>
+                  <Input
+                    placeholder="Nombre de quien recibió"
+                    value={receivedByName}
+                    onChange={(e) => setReceivedByName(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2 p-3 bg-muted rounded-lg">
+                  <Checkbox
+                    id="serviceAcknowledged"
+                    checked={serviceAcknowledged}
+                    onCheckedChange={(checked) => setServiceAcknowledged(checked === true)}
+                  />
+                  <Label 
+                    htmlFor="serviceAcknowledged" 
+                    className="text-sm cursor-pointer flex-1"
+                  >
+                    El cliente/persona confirmó que recibió el servicio correctamente
+                  </Label>
+                </div>
+              </>
+            )}
+            
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Notas adicionales (opcional)</Label>
+              <Textarea
+                placeholder={completionReason === 'no_one_home' 
+                  ? "Describe la situación..." 
+                  : "Cualquier observación adicional..."
+                }
+                value={completedNotes}
+                onChange={(e) => setCompletedNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+              <Clock className="h-3 w-3 inline mr-1" />
+              Fecha y hora de finalización: {format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}
+            </div>
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button 
@@ -920,6 +1017,9 @@ export default function TechnicianDashboard() {
                 setCompleteDialogOpen(false);
                 setCompletionReason('completed');
                 setCompletedNotes('');
+                setWorkPerformed('');
+                setReceivedByName('');
+                setServiceAcknowledged(false);
               }}
             >
               Cancelar

@@ -876,8 +876,10 @@ export type Database = {
           estimated_duration: number | null
           id: string
           prospect_id: string | null
+          received_by_name: string | null
           scheduled_date: string
           scheduled_time: string | null
+          service_acknowledged: boolean | null
           service_type: Database["public"]["Enums"]["service_type"]
           status: Database["public"]["Enums"]["service_status"]
           title: string
@@ -885,6 +887,7 @@ export type Database = {
           visit_latitude: number | null
           visit_longitude: number | null
           visit_started_at: string | null
+          work_performed: string | null
         }
         Insert: {
           assigned_to: string
@@ -899,8 +902,10 @@ export type Database = {
           estimated_duration?: number | null
           id?: string
           prospect_id?: string | null
+          received_by_name?: string | null
           scheduled_date: string
           scheduled_time?: string | null
+          service_acknowledged?: boolean | null
           service_type?: Database["public"]["Enums"]["service_type"]
           status?: Database["public"]["Enums"]["service_status"]
           title: string
@@ -908,6 +913,7 @@ export type Database = {
           visit_latitude?: number | null
           visit_longitude?: number | null
           visit_started_at?: string | null
+          work_performed?: string | null
         }
         Update: {
           assigned_to?: string
@@ -922,8 +928,10 @@ export type Database = {
           estimated_duration?: number | null
           id?: string
           prospect_id?: string | null
+          received_by_name?: string | null
           scheduled_date?: string
           scheduled_time?: string | null
+          service_acknowledged?: boolean | null
           service_type?: Database["public"]["Enums"]["service_type"]
           status?: Database["public"]["Enums"]["service_status"]
           title?: string
@@ -931,6 +939,7 @@ export type Database = {
           visit_latitude?: number | null
           visit_longitude?: number | null
           visit_started_at?: string | null
+          work_performed?: string | null
         }
         Relationships: [
           {
