@@ -110,7 +110,7 @@ export default function Services() {
   const [completedNotes, setCompletedNotes] = useState('');
   
   // New state for search, filters, and view mode
-  const [viewMode, setViewMode] = useState<ViewMode>('schedule');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
