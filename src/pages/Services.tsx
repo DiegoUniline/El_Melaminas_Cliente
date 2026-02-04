@@ -47,8 +47,9 @@ import {
   DollarSign,
   LayoutGrid,
   TableIcon,
-  Filter
+  CalendarDays
 } from 'lucide-react';
+import { ServicesCalendar } from '@/components/services/ServicesCalendar';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -74,7 +75,7 @@ const SERVICE_STATUS = {
 
 type ServiceType = keyof typeof SERVICE_TYPES;
 type ServiceStatus = keyof typeof SERVICE_STATUS;
-type ViewMode = 'kanban' | 'table';
+type ViewMode = 'kanban' | 'table' | 'calendar';
 
 interface ScheduledService {
   id: string;
@@ -107,7 +108,7 @@ export default function Services() {
   const [completedNotes, setCompletedNotes] = useState('');
   
   // New state for search, filters, and view mode
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
@@ -661,10 +662,19 @@ export default function Services() {
               </div>
               <div className="flex border rounded-md">
                 <Button
+                  variant={viewMode === 'calendar' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  onClick={() => setViewMode('calendar')}
+                  className="rounded-r-none"
+                  title="Vista Calendario"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </Button>
+                <Button
                   variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
                   size="icon"
                   onClick={() => setViewMode('kanban')}
-                  className="rounded-r-none"
+                  title="Vista Tarjetas"
                 >
                   <LayoutGrid className="h-4 w-4" />
                 </Button>
@@ -673,6 +683,7 @@ export default function Services() {
                   size="icon"
                   onClick={() => setViewMode('table')}
                   className="rounded-l-none"
+                  title="Vista Tabla"
                 >
                   <TableIcon className="h-4 w-4" />
                 </Button>
@@ -811,6 +822,8 @@ export default function Services() {
                   )}
                 </CardContent>
               </Card>
+            ) : viewMode === 'calendar' ? (
+              <ServicesCalendar services={filteredServices} />
             ) : viewMode === 'kanban' ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {filteredServices.map(renderServiceCard)}
