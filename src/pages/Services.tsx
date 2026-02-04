@@ -59,7 +59,7 @@ import { ServicesCalendar } from '@/components/services/ServicesCalendar';
 import { ServicesScheduleGrid } from '@/components/services/ServicesScheduleGrid';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/billing';
 
@@ -516,7 +516,7 @@ export default function Services() {
           <div className="flex items-center gap-2 text-sm">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <span>
-              {format(new Date(service.scheduled_date), "dd 'de' MMMM, yyyy", { locale: es })}
+              {format(parseISO(service.scheduled_date), "dd 'de' MMMM, yyyy", { locale: es })}
             </span>
           </div>
           {service.scheduled_time && (
@@ -638,7 +638,7 @@ export default function Services() {
                     </TableCell>
                     <TableCell>{service.employee_name}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {format(new Date(service.scheduled_date), "dd/MM/yyyy")}
+                      {format(parseISO(service.scheduled_date), "dd/MM/yyyy")}
                     </TableCell>
                     <TableCell>
                       {service.scheduled_time ? service.scheduled_time.slice(0, 5) : '-'}
@@ -1230,7 +1230,7 @@ export default function Services() {
                 <div className="flex items-start gap-3">
                   <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <p>
-                    {format(new Date(selectedService.scheduled_date), "EEEE, dd 'de' MMMM yyyy", { locale: es })}
+                    {format(parseISO(selectedService.scheduled_date), "EEEE, dd 'de' MMMM yyyy", { locale: es })}
                   </p>
                 </div>
 
