@@ -38,6 +38,7 @@ import {
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { Map as PigeonMap, Marker, Overlay } from 'pigeon-maps';
 
 const SERVICE_TYPES = {
   installation: { label: 'Instalación', color: 'bg-blue-500' },
@@ -80,8 +81,16 @@ interface VisitService {
   employee_name?: string;
 }
 
+// Get marker color based on service status
+const getMarkerColor = (service: VisitService): string => {
+  if (service.completed_notes?.includes('[No había nadie')) return '#f97316'; // orange
+  if (service.status === 'completed') return '#22c55e'; // green
+  if (service.status === 'in_progress') return '#eab308'; // yellow
+  return '#ef4444'; // red
+};
+
 export default function VisitsReport() {
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'map' | 'table'>('map');
   const [dateFrom, setDateFrom] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 7);
@@ -92,6 +101,7 @@ export default function VisitsReport() {
   const [technicianFilter, setTechnicianFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
 
   // Fetch employees
   const { data: employees = [] } = useQuery({
@@ -125,8 +135,7 @@ export default function VisitsReport() {
 
       if (error) throw error;
       
-      // Add employee names
-      const employeeMap = new Map(employees.map(e => [e.user_id, e.full_name]));
+      const employeeMap = new globalThis.Map(employees.map(e => [e.user_id, e.full_name]));
       return (data as unknown as VisitService[]).map(s => ({
         ...s,
         employee_name: employeeMap.get(s.assigned_to) || 'Sin asignar'
@@ -160,6 +169,36 @@ export default function VisitsReport() {
 
   // Services with GPS
   const servicesWithGPS = filteredServices.filter(s => s.visit_latitude && s.visit_longitude);
+
+  // Calculate map center and zoom
+  const mapConfig = useMemo(() => {
+    if (servicesWithGPS.length === 0) {
+      return { center: [23.6345, -102.5528] as [number, number], zoom: 5 };
+    }
+    
+    const lats = servicesWithGPS.map(s => s.visit_latitude!);
+    const lngs = servicesWithGPS.map(s => s.visit_longitude!);
+    
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+    
+    // Calculate zoom based on spread
+    const latDiff = maxLat - minLat;
+    const lngDiff = maxLng - minLng;
+    const maxDiff = Math.max(latDiff, lngDiff);
+    
+    let zoom = 14;
+    if (maxDiff > 0.5) zoom = 10;
+    else if (maxDiff > 0.1) zoom = 12;
+    else if (maxDiff > 0.01) zoom = 14;
+    
+    return { center: [centerLat, centerLng] as [number, number], zoom };
+  }, [servicesWithGPS]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -214,16 +253,6 @@ export default function VisitsReport() {
 
   const openInMaps = (lat: number, lng: number) => {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
-  };
-
-  const openAllInMaps = () => {
-    if (servicesWithGPS.length === 0) return;
-    // Create a Google Maps URL with all markers
-    const markers = servicesWithGPS
-      .slice(0, 10) // Limit to 10 markers for URL length
-      .map(s => `${s.visit_latitude},${s.visit_longitude}`)
-      .join('/');
-    window.open(`https://www.google.com/maps/dir/${markers}`, '_blank');
   };
 
   return (
@@ -335,9 +364,9 @@ export default function VisitsReport() {
                 </Select>
                 <div className="flex border rounded-md">
                   <Button
-                    variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
+                    variant={viewMode === 'map' ? 'secondary' : 'ghost'}
                     size="sm"
-                    onClick={() => setViewMode('cards')}
+                    onClick={() => setViewMode('map')}
                   >
                     <MapIcon className="h-4 w-4" />
                   </Button>
@@ -355,110 +384,91 @@ export default function VisitsReport() {
         </Card>
 
         {/* Content */}
-        {viewMode === 'cards' ? (
-          <div className="space-y-4">
-            {/* Map action button */}
-            {servicesWithGPS.length > 0 && (
-              <div className="flex justify-end">
-                <Button variant="outline" onClick={openAllInMaps}>
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Ver todas en Google Maps ({servicesWithGPS.length})
-                </Button>
-              </div>
-            )}
-            
-            {/* Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredServices.map((service) => (
-                <Card key={service.id} className={cn(
-                  "overflow-hidden",
-                  isNoOneHome(service) && "border-orange-300",
-                  service.status === 'completed' && !isNoOneHome(service) && "border-green-300"
-                )}>
-                  <div className={cn(
-                    "h-1",
-                    isNoOneHome(service) ? "bg-orange-500" : SERVICE_STATUS[service.status]?.color
-                  )} />
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate">{service.title}</p>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {getPersonName(service)}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-1 items-end">
-                        <Badge className={cn(SERVICE_STATUS[service.status]?.color, 'text-white text-xs')}>
-                          {SERVICE_STATUS[service.status]?.label}
-                        </Badge>
-                        {isNoOneHome(service) && (
-                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
-                            Sin nadie
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+        {viewMode === 'map' ? (
+          <Card>
+            <CardContent className="p-0">
+              <div className="h-[500px] rounded-lg overflow-hidden">
+                {servicesWithGPS.length > 0 ? (
+                  <PigeonMap
+                    defaultCenter={mapConfig.center}
+                    defaultZoom={mapConfig.zoom}
+                    onClick={() => setSelectedMarker(null)}
+                  >
+                    {servicesWithGPS.map((service) => (
+                      <Marker
+                        key={service.id}
+                        anchor={[service.visit_latitude!, service.visit_longitude!]}
+                        color={getMarkerColor(service)}
+                        width={40}
+                        onClick={() => setSelectedMarker(service.id)}
+                      />
+                    ))}
                     
-                    <div className="space-y-1 text-sm">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span className="truncate">{getAddress(service)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span>{service.employee_name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span>
-                          {format(parseISO(service.scheduled_date), "dd/MM/yyyy")}
-                          {service.visit_started_at && (
-                            <> • Llegada: {format(parseISO(service.visit_started_at), "HH:mm")}</>
-                          )}
-                        </span>
-                      </div>
-                      {service.completed_at && (
-                        <div className="flex items-center gap-2">
-                          <Timer className="h-4 w-4 text-muted-foreground" />
-                          <span>Duración: {getDuration(service)}</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {service.visit_latitude && service.visit_longitude && (
-                      <div className="pt-2 border-t">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="w-full"
-                          onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
+                    {/* Popup overlay for selected marker */}
+                    {selectedMarker && (() => {
+                      const service = servicesWithGPS.find(s => s.id === selectedMarker);
+                      if (!service) return null;
+                      return (
+                        <Overlay
+                          anchor={[service.visit_latitude!, service.visit_longitude!]}
+                          offset={[0, -20]}
                         >
-                          <MapPin className="h-4 w-4 mr-2 text-green-500" />
-                          Ver ubicación GPS
-                          <span className="ml-auto text-xs text-muted-foreground">
-                            {service.visit_latitude?.toFixed(4)}, {service.visit_longitude?.toFixed(4)}
-                          </span>
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {service.completed_notes && (
-                      <p className="text-xs text-muted-foreground italic border-t pt-2">
-                        "{service.completed_notes}"
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-              
-              {filteredServices.length === 0 && (
-                <div className="col-span-full text-center py-12 text-muted-foreground">
-                  <Navigation className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No hay visitas en el rango seleccionado</p>
-                </div>
-              )}
-            </div>
-          </div>
+                          <div className="bg-background border rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]">
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="font-semibold text-sm">{service.title}</p>
+                                <button 
+                                  onClick={() => setSelectedMarker(null)}
+                                  className="text-muted-foreground hover:text-foreground"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              <p className="text-xs">{getPersonName(service)}</p>
+                              <p className="text-xs text-muted-foreground">{getAddress(service)}</p>
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  className="text-xs text-white"
+                                  style={{ backgroundColor: getMarkerColor(service) }}
+                                >
+                                  {isNoOneHome(service) ? 'Sin nadie' : SERVICE_STATUS[service.status]?.label}
+                                </Badge>
+                              </div>
+                              <div className="text-xs space-y-1">
+                                <p><strong>Técnico:</strong> {service.employee_name}</p>
+                                {service.visit_started_at && (
+                                  <p><strong>Llegada:</strong> {format(parseISO(service.visit_started_at), "dd/MM HH:mm")}</p>
+                                )}
+                                {service.completed_at && (
+                                  <p><strong>Duración:</strong> {getDuration(service)}</p>
+                                )}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full mt-2"
+                                onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
+                              >
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                Ver en Google Maps
+                              </Button>
+                            </div>
+                          </div>
+                        </Overlay>
+                      );
+                    })()}
+                  </PigeonMap>
+                ) : (
+                  <div className="h-full flex items-center justify-center bg-muted/20">
+                    <div className="text-center">
+                      <MapPin className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">No hay visitas con GPS en el rango seleccionado</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="p-0">
