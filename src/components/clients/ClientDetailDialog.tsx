@@ -45,7 +45,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { format, addMonths, isBefore, startOfDay, startOfMonth, eachMonthOfInterval } from 'date-fns';
+import { format, addMonths, isBefore, startOfDay, startOfMonth, eachMonthOfInterval, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   User, MapPin, Phone, FileText, Wifi, DollarSign, 
@@ -1394,7 +1394,7 @@ export function ClientDetailDialog({ client, open, onOpenChange, onRegisterPayme
                           return (
                             <TableRow key={service.id}>
                               <TableCell>
-                                {format(new Date(service.scheduled_date), 'dd/MM/yyyy')}
+                                {format(parseISO(service.scheduled_date), 'dd/MM/yyyy')}
                                 {service.scheduled_time && (
                                   <span className="text-muted-foreground text-xs ml-1">
                                     {service.scheduled_time.slice(0, 5)}
