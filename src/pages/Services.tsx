@@ -108,8 +108,11 @@ export default function Services() {
   // New state for search, filters, and view mode
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTechnician, setFilterTechnician] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [filterClient, setFilterClient] = useState<string>('all');
+  const [filterTechnician, setFilterTechnician] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -227,8 +230,13 @@ export default function Services() {
         }
       }
       
-      // Technician filter
-      if (filterTechnician !== 'all' && service.assigned_to !== filterTechnician) {
+      // Date from filter
+      if (filterDateFrom && service.scheduled_date < filterDateFrom) {
+        return false;
+      }
+      
+      // Date to filter
+      if (filterDateTo && service.scheduled_date > filterDateTo) {
         return false;
       }
       
@@ -240,9 +248,19 @@ export default function Services() {
         }
       }
       
+      // Technician filter
+      if (filterTechnician !== 'all' && service.assigned_to !== filterTechnician) {
+        return false;
+      }
+      
+      // Status filter (additional to tab)
+      if (filterStatus !== 'all' && service.status !== filterStatus) {
+        return false;
+      }
+      
       return true;
     });
-  }, [services, searchQuery, filterTechnician, filterClient]);
+  }, [services, searchQuery, filterDateFrom, filterDateTo, filterClient, filterTechnician, filterStatus]);
 
   // Get unique clients/prospects from services for filter dropdown
   const serviceClientsProspects = useMemo(() => {
@@ -396,11 +414,14 @@ export default function Services() {
 
   const clearFilters = () => {
     setSearchQuery('');
-    setFilterTechnician('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
     setFilterClient('all');
+    setFilterTechnician('all');
+    setFilterStatus('all');
   };
 
-  const hasActiveFilters = searchQuery || filterTechnician !== 'all' || filterClient !== 'all';
+  const hasActiveFilters = searchQuery || filterDateFrom || filterDateTo || filterTechnician !== 'all' || filterClient !== 'all' || filterStatus !== 'all';
 
   // Render service card (for kanban view)
   const renderServiceCard = (service: ScheduledService) => {
@@ -675,24 +696,24 @@ export default function Services() {
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
-                <div className="flex-1 space-y-2">
-                  <Label>Técnico Asignado</Label>
-                  <Select value={filterTechnician} onValueChange={setFilterTechnician}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Todos los técnicos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos los técnicos</SelectItem>
-                      {employees.map((e) => (
-                        <SelectItem key={e.user_id} value={e.user_id}>
-                          {e.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label>Fecha Desde</Label>
+                  <Input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                  />
                 </div>
-                <div className="flex-1 space-y-2">
+                <div className="space-y-2">
+                  <Label>Fecha Hasta</Label>
+                  <Input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Cliente/Prospecto</Label>
                   <Select value={filterClient} onValueChange={setFilterClient}>
                     <SelectTrigger>
@@ -708,8 +729,40 @@ export default function Services() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>Técnico Asignado</Label>
+                  <Select value={filterTechnician} onValueChange={setFilterTechnician}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {employees.map((e) => (
+                        <SelectItem key={e.user_id} value={e.user_id}>
+                          {e.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Estado</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {Object.entries(SERVICE_STATUS).map(([key, value]) => (
+                        <SelectItem key={key} value={key}>
+                          {value.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {hasActiveFilters && (
-                  <div className="flex items-end">
+                  <div className="flex items-end lg:col-span-5">
                     <Button variant="ghost" onClick={clearFilters}>
                       Limpiar filtros
                     </Button>
