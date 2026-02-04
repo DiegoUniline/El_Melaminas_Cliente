@@ -48,7 +48,11 @@ import {
   LayoutGrid,
   TableIcon,
   CalendarDays,
-  CalendarClock
+  CalendarClock,
+  Eye,
+  FileText,
+  Phone,
+  RefreshCw
 } from 'lucide-react';
 import { ServicesCalendar } from '@/components/services/ServicesCalendar';
 import { ServicesScheduleGrid } from '@/components/services/ServicesScheduleGrid';
@@ -108,6 +112,9 @@ export default function Services() {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<ScheduledService | null>(null);
   const [completedNotes, setCompletedNotes] = useState('');
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [changeStatusDialogOpen, setChangeStatusDialogOpen] = useState(false);
+  const [newStatus, setNewStatus] = useState<ServiceStatus>('scheduled');
   
   // New state for search, filters, and view mode
   const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -416,6 +423,28 @@ export default function Services() {
     }
   };
 
+  const handleServiceClick = (service: ScheduledService) => {
+    setSelectedService(service);
+    setDetailDialogOpen(true);
+  };
+
+  const handleChangeStatus = (service: ScheduledService) => {
+    setSelectedService(service);
+    setNewStatus(service.status);
+    setChangeStatusDialogOpen(true);
+  };
+
+  const confirmChangeStatus = () => {
+    if (selectedService && newStatus) {
+      updateStatusMutation.mutate({ 
+        id: selectedService.id, 
+        status: newStatus
+      });
+      setChangeStatusDialogOpen(false);
+      setDetailDialogOpen(false);
+    }
+  };
+
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -435,7 +464,11 @@ export default function Services() {
     const StatusIcon = statusInfo.icon;
 
     return (
-      <Card key={service.id} className="overflow-hidden">
+      <Card 
+        key={service.id} 
+        className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => handleServiceClick(service)}
+      >
         <div className={`h-1 ${typeInfo.color}`} />
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
@@ -490,11 +523,11 @@ export default function Services() {
 
           {/* Actions */}
           {service.status === 'scheduled' && (
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
               <Button 
                 size="sm" 
                 className="flex-1"
-                onClick={() => handleStartService(service)}
+                onClick={(e) => { e.stopPropagation(); handleStartService(service); }}
               >
                 <PlayCircle className="h-4 w-4 mr-1" />
                 Iniciar
@@ -503,7 +536,7 @@ export default function Services() {
                 <Button 
                   size="sm" 
                   variant="destructive"
-                  onClick={() => handleCancelService(service)}
+                  onClick={(e) => { e.stopPropagation(); handleCancelService(service); }}
                 >
                   <XCircle className="h-4 w-4" />
                 </Button>
@@ -511,11 +544,11 @@ export default function Services() {
             </div>
           )}
           {service.status === 'in_progress' && (
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
               <Button 
                 size="sm" 
                 className="flex-1 bg-green-600 hover:bg-green-700"
-                onClick={() => handleCompleteService(service)}
+                onClick={(e) => { e.stopPropagation(); handleCompleteService(service); }}
               >
                 <CheckCircle2 className="h-4 w-4 mr-1" />
                 Completar
@@ -564,7 +597,11 @@ export default function Services() {
                 const StatusIcon = statusInfo.icon;
 
                 return (
-                  <TableRow key={service.id}>
+                  <TableRow 
+                    key={service.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleServiceClick(service)}
+                  >
                     <TableCell className="font-medium">{service.title}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="whitespace-nowrap">
@@ -593,13 +630,32 @@ export default function Services() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button 
+                          size="sm" 
+                          variant="ghost"
+                          onClick={() => handleServiceClick(service)}
+                          title="Ver detalles"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {isAdmin && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleChangeStatus(service)}
+                            title="Cambiar estado"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                        )}
                         {service.status === 'scheduled' && (
                           <>
                             <Button 
                               size="sm" 
                               variant="outline"
                               onClick={() => handleStartService(service)}
+                              title="Iniciar"
                             >
                               <PlayCircle className="h-4 w-4" />
                             </Button>
@@ -608,6 +664,7 @@ export default function Services() {
                                 size="sm" 
                                 variant="destructive"
                                 onClick={() => handleCancelService(service)}
+                                title="Cancelar"
                               >
                                 <XCircle className="h-4 w-4" />
                               </Button>
@@ -619,6 +676,7 @@ export default function Services() {
                             size="sm" 
                             className="bg-green-600 hover:bg-green-700"
                             onClick={() => handleCompleteService(service)}
+                            title="Completar"
                           >
                             <CheckCircle2 className="h-4 w-4" />
                           </Button>
@@ -1029,6 +1087,168 @@ export default function Services() {
             >
               {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Service Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              Detalles del Servicio
+            </DialogTitle>
+          </DialogHeader>
+          {selectedService && (
+            <div className="space-y-4">
+              {/* Title and Status */}
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <h3 className="font-semibold text-lg">{selectedService.title}</h3>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge className={SERVICE_TYPES[selectedService.service_type]?.color || 'bg-slate-500'}>
+                    {SERVICE_TYPES[selectedService.service_type]?.label || 'Otro'}
+                  </Badge>
+                  <Badge className={`${SERVICE_STATUS[selectedService.status]?.color} text-white`}>
+                    {SERVICE_STATUS[selectedService.status]?.label}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Description */}
+              {selectedService.description && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="h-4 w-4 text-yellow-600" />
+                    <span className="font-medium text-yellow-700 dark:text-yellow-400 text-sm">Descripción / Problema</span>
+                  </div>
+                  <p className="text-sm">{selectedService.description}</p>
+                </div>
+              )}
+
+              {/* Contact Info */}
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <User className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium">{getPersonName(selectedService)}</p>
+                    {selectedService.prospects && (
+                      <Badge variant="outline" className="text-xs mt-1">Prospecto</Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <p className="text-sm">{getAddress(selectedService)}</p>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <p>
+                    {format(new Date(selectedService.scheduled_date), "EEEE, dd 'de' MMMM yyyy", { locale: es })}
+                  </p>
+                </div>
+
+                {selectedService.scheduled_time && (
+                  <div className="flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+                    <p>{selectedService.scheduled_time.slice(0, 5)} hrs</p>
+                  </div>
+                )}
+
+                <div className="flex items-start gap-3">
+                  <Wrench className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <p>Técnico: {selectedService.employee_name || 'Sin asignar'}</p>
+                </div>
+
+                {selectedService.charge_amount && selectedService.charge_amount > 0 && (
+                  <div className="flex items-start gap-3 bg-yellow-100 dark:bg-yellow-900/30 p-2 rounded">
+                    <DollarSign className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    <p className="font-semibold text-yellow-700 dark:text-yellow-400">
+                      Cargo: {formatCurrency(selectedService.charge_amount)}
+                    </p>
+                  </div>
+                )}
+
+                {selectedService.completed_notes && (
+                  <div className="border-t pt-3">
+                    <p className="text-sm font-medium mb-1">Notas de cierre:</p>
+                    <p className="text-sm text-muted-foreground">{selectedService.completed_notes}</p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="flex-col gap-2 sm:flex-row">
+                {isAdmin && (
+                  <Button 
+                    variant="outline"
+                    onClick={() => handleChangeStatus(selectedService)}
+                    className="w-full sm:w-auto"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Cambiar Estado
+                  </Button>
+                )}
+                <Button 
+                  variant="outline" 
+                  onClick={() => setDetailDialogOpen(false)}
+                  className="w-full sm:w-auto"
+                >
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Status Dialog (Admin only) */}
+      <Dialog open={changeStatusDialogOpen} onOpenChange={setChangeStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar Estado del Servicio</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Servicio: "{selectedService?.title}"
+            </p>
+            <p className="text-sm">
+              Estado actual: <Badge className={`${SERVICE_STATUS[selectedService?.status || 'scheduled']?.color} text-white`}>
+                {SERVICE_STATUS[selectedService?.status || 'scheduled']?.label}
+              </Badge>
+            </p>
+            
+            <div className="space-y-2">
+              <Label>Nuevo estado</Label>
+              <Select value={newStatus} onValueChange={(v) => setNewStatus(v as ServiceStatus)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona el nuevo estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(SERVICE_STATUS).map(([key, value]) => (
+                    <SelectItem key={key} value={key}>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${value.color}`} />
+                        {value.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChangeStatusDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmChangeStatus}
+              disabled={updateStatusMutation.isPending || newStatus === selectedService?.status}
+            >
+              {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Cambiar Estado
             </Button>
           </DialogFooter>
         </DialogContent>
