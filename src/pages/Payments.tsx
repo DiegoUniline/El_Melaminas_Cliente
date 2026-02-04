@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { SearchInput } from '@/components/shared/SearchInput';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { DataTable } from '@/components/shared/DataTable';
 import { PaymentDetailDialog } from '@/components/payments/PaymentDetailDialog';
 import { exportToExcel } from '@/lib/exportToExcel';
@@ -23,6 +26,11 @@ export default function Payments() {
   const [search, setSearch] = useState('');
   const [selectedPayment, setSelectedPayment] = useState<PaymentWithClient | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  
+  // Filter states
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterClient, setFilterClient] = useState('all');
 
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ['payments'],
@@ -65,6 +73,20 @@ export default function Payments() {
     },
   });
 
+  // Get unique clients from payments for filter
+  const paymentClients = useMemo(() => {
+    const clientsMap = new Map<string, { id: string; name: string }>();
+    payments.forEach(p => {
+      if (p.clients && !clientsMap.has(p.clients.id)) {
+        clientsMap.set(p.clients.id, {
+          id: p.clients.id,
+          name: `${p.clients.first_name} ${p.clients.last_name_paterno}`,
+        });
+      }
+    });
+    return Array.from(clientsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [payments]);
+
   const getPaymentMethodName = (id: string) => {
     const method = paymentMethods.find(m => m.id === id);
     return method?.name || id;
@@ -88,15 +110,47 @@ export default function Payments() {
   const totalMonthly = monthlyPayments.reduce((sum, p) => sum + p.amount, 0);
   const avgPayment = monthlyPayments.length > 0 ? totalMonthly / monthlyPayments.length : 0;
 
-  const filteredPayments = payments.filter((payment) => {
-    const searchLower = search.toLowerCase();
-    const clientName = `${payment.clients?.first_name} ${payment.clients?.last_name_paterno}`.toLowerCase();
-    return (
-      clientName.includes(searchLower) ||
-      payment.receipt_number?.includes(search) ||
-      payment.payment_type.toLowerCase().includes(searchLower)
-    );
-  });
+  // Apply all filters
+  const filteredPayments = useMemo(() => {
+    return payments.filter((payment) => {
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase();
+        const clientName = `${payment.clients?.first_name} ${payment.clients?.last_name_paterno}`.toLowerCase();
+        if (!clientName.includes(searchLower) &&
+            !payment.receipt_number?.toLowerCase().includes(searchLower) &&
+            !payment.payment_type.toLowerCase().includes(searchLower)) {
+          return false;
+        }
+      }
+      
+      // Date from filter
+      if (filterDateFrom && payment.payment_date < filterDateFrom) {
+        return false;
+      }
+      
+      // Date to filter
+      if (filterDateTo && payment.payment_date > filterDateTo) {
+        return false;
+      }
+      
+      // Client filter
+      if (filterClient !== 'all' && payment.clients?.id !== filterClient) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [payments, search, filterDateFrom, filterDateTo, filterClient]);
+
+  const hasActiveFilters = search || filterDateFrom || filterDateTo || filterClient !== 'all';
+
+  const clearFilters = () => {
+    setSearch('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterClient('all');
+  };
 
   const handleExport = () => {
     const exportData = filteredPayments.map((payment) => ({
@@ -238,19 +292,69 @@ export default function Payments() {
           </Card>
         </div>
 
+        {/* Filters */}
+        <Card>
+          <CardContent className="pt-4 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <SearchInput
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Buscar por cliente, recibo, tipo..."
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t">
+              <div className="space-y-2">
+                <Label>Fecha Desde</Label>
+                <Input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha Hasta</Label>
+                <Input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cliente</Label>
+                <SearchableSelect
+                  value={filterClient}
+                  onChange={setFilterClient}
+                  options={[
+                    { value: 'all', label: 'Todos' },
+                    ...paymentClients.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    })),
+                  ]}
+                  placeholder="Todos"
+                  searchPlaceholder="Buscar cliente..."
+                />
+              </div>
+              {hasActiveFilters && (
+                <div className="flex items-end">
+                  <Button variant="ghost" onClick={clearFilters}>
+                    Limpiar filtros
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                Historial de Pagos ({filteredPayments.length})
-              </CardTitle>
-              <SearchInput
-                value={search}
-                onChange={setSearch}
-                placeholder="Buscar por cliente, recibo, tipo..."
-              />
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Historial de Pagos ({filteredPayments.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <DataTable
