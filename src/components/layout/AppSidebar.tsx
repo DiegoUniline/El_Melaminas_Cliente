@@ -13,7 +13,8 @@ import {
   Receipt,
   MessageCircle,
   Shield,
-  Smartphone
+  Smartphone,
+  Navigation
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -150,6 +151,18 @@ export function AppSidebar() {
                     <NavLink to="/technician">
                       <Smartphone className="h-4 w-4" />
                       <span>Vista Técnico</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {/* Visits Report link */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/visits-report'}
+                  >
+                    <NavLink to="/visits-report">
+                      <Navigation className="h-4 w-4" />
+                      <span>Reporte Visitas</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
