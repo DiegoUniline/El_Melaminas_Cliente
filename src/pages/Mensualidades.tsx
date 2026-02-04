@@ -6,6 +6,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, startOfMonth, eachMonthOfInterval, differenceInDays, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -32,6 +34,7 @@ import {
   Loader2, RefreshCw, FileWarning
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
+
 
 interface ClientMensualidad {
   clientId: string;
@@ -604,17 +607,19 @@ export default function Mensualidades() {
                 </SelectContent>
               </Select>
 
-              <Select value={neighborhoodFilter} onValueChange={setNeighborhoodFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Colonia" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las colonias</SelectItem>
-                  {neighborhoods.map(n => (
-                    <SelectItem key={n} value={n}>{n}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={neighborhoodFilter}
+                onChange={setNeighborhoodFilter}
+                options={[
+                  { value: 'all', label: 'Todas las colonias' },
+                  ...neighborhoods.map(n => ({
+                    value: n,
+                    label: n,
+                  })),
+                ]}
+                placeholder="Todas las colonias"
+                searchPlaceholder="Buscar colonia..."
+              />
 
               <Select value={daysFilter} onValueChange={setDaysFilter}>
                 <SelectTrigger>
