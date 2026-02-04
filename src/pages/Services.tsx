@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -23,6 +23,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { SearchInput } from '@/components/shared/SearchInput';
 import { 
   Plus, 
   Calendar, 
@@ -34,7 +43,10 @@ import {
   XCircle,
   PlayCircle,
   Loader2,
-  DollarSign
+  DollarSign,
+  LayoutGrid,
+  TableIcon,
+  Filter
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -61,6 +73,7 @@ const SERVICE_STATUS = {
 
 type ServiceType = keyof typeof SERVICE_TYPES;
 type ServiceStatus = keyof typeof SERVICE_STATUS;
+type ViewMode = 'kanban' | 'table';
 
 interface ScheduledService {
   id: string;
@@ -78,8 +91,8 @@ interface ScheduledService {
   completed_at: string | null;
   completed_notes: string | null;
   created_at: string;
-  clients?: { first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string } | null;
-  prospects?: { first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string } | null;
+  clients?: { id: string; first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string } | null;
+  prospects?: { id: string; first_name: string; last_name_paterno: string; street: string; exterior_number: string; neighborhood: string } | null;
   employee_name?: string;
 }
 
@@ -91,6 +104,13 @@ export default function Services() {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<ScheduledService | null>(null);
   const [completedNotes, setCompletedNotes] = useState('');
+  
+  // New state for search, filters, and view mode
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterTechnician, setFilterTechnician] = useState<string>('all');
+  const [filterClient, setFilterClient] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
   
   const [formData, setFormData] = useState({
     client_id: '',
@@ -113,8 +133,8 @@ export default function Services() {
         .from('scheduled_services')
         .select(`
           *,
-          clients(first_name, last_name_paterno, street, exterior_number, neighborhood),
-          prospects(first_name, last_name_paterno, street, exterior_number, neighborhood)
+          clients(id, first_name, last_name_paterno, street, exterior_number, neighborhood),
+          prospects(id, first_name, last_name_paterno, street, exterior_number, neighborhood)
         `)
         .order('scheduled_date', { ascending: true });
 
@@ -188,6 +208,61 @@ export default function Services() {
     },
   });
 
+  // Filtered services
+  const filteredServices = useMemo(() => {
+    return services.filter(service => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const personName = getPersonName(service).toLowerCase();
+        const address = getAddress(service).toLowerCase();
+        const title = service.title.toLowerCase();
+        const employeeName = (service.employee_name || '').toLowerCase();
+        
+        if (!personName.includes(query) && 
+            !address.includes(query) && 
+            !title.includes(query) &&
+            !employeeName.includes(query)) {
+          return false;
+        }
+      }
+      
+      // Technician filter
+      if (filterTechnician !== 'all' && service.assigned_to !== filterTechnician) {
+        return false;
+      }
+      
+      // Client filter
+      if (filterClient !== 'all') {
+        const clientId = service.client_id || service.prospect_id;
+        if (clientId !== filterClient) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [services, searchQuery, filterTechnician, filterClient]);
+
+  // Get unique clients/prospects from services for filter dropdown
+  const serviceClientsProspects = useMemo(() => {
+    const items: { id: string; name: string }[] = [];
+    const seen = new Set<string>();
+    
+    services.forEach(s => {
+      if (s.clients && !seen.has(s.clients.id)) {
+        seen.add(s.clients.id);
+        items.push({ id: s.clients.id, name: `${s.clients.first_name} ${s.clients.last_name_paterno}` });
+      }
+      if (s.prospects && !seen.has(s.prospects.id)) {
+        seen.add(s.prospects.id);
+        items.push({ id: s.prospects.id, name: `${s.prospects.first_name} ${s.prospects.last_name_paterno} (P)` });
+      }
+    });
+    
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+  }, [services]);
+
   // Create service mutation
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -205,14 +280,10 @@ export default function Services() {
         created_by: user?.id,
       };
       
-      console.log('Creating service with data:', insertData);
-      
       const { data: result, error } = await supabase
         .from('scheduled_services')
         .insert(insertData)
         .select();
-      
-      console.log('Insert result:', result, 'Error:', error);
       
       if (error) throw error;
       return result;
@@ -224,7 +295,6 @@ export default function Services() {
       resetForm();
     },
     onError: (error: Error) => {
-      console.error('Create service error:', error);
       toast.error('Error al agendar servicio: ' + error.message);
     },
   });
@@ -324,6 +394,221 @@ export default function Services() {
     return '';
   };
 
+  const clearFilters = () => {
+    setSearchQuery('');
+    setFilterTechnician('all');
+    setFilterClient('all');
+  };
+
+  const hasActiveFilters = searchQuery || filterTechnician !== 'all' || filterClient !== 'all';
+
+  // Render service card (for kanban view)
+  const renderServiceCard = (service: ScheduledService) => {
+    const typeInfo = SERVICE_TYPES[service.service_type] || SERVICE_TYPES.other;
+    const statusInfo = SERVICE_STATUS[service.status];
+    const StatusIcon = statusInfo.icon;
+
+    return (
+      <Card key={service.id} className="overflow-hidden">
+        <div className={`h-1 ${typeInfo.color}`} />
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="text-base">{service.title}</CardTitle>
+              <Badge variant="outline" className="mt-1">
+                {typeInfo.label}
+              </Badge>
+            </div>
+            <Badge className={`${statusInfo.color} text-white`}>
+              <StatusIcon className="h-3 w-3 mr-1" />
+              {statusInfo.label}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <User className="h-4 w-4 text-muted-foreground" />
+            <span>{getPersonName(service)}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+            <span className="truncate">{getAddress(service)}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span>
+              {format(new Date(service.scheduled_date), "dd 'de' MMMM, yyyy", { locale: es })}
+            </span>
+          </div>
+          {service.scheduled_time && (
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span>{service.scheduled_time.slice(0, 5)} hrs</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-sm">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <span>Asignado a: {service.employee_name || 'Sin asignar'}</span>
+          </div>
+          {service.charge_amount && service.charge_amount > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <span>Cargo: {formatCurrency(service.charge_amount)}</span>
+            </div>
+          )}
+          {service.description && (
+            <p className="text-sm text-muted-foreground pt-2 border-t">
+              {service.description}
+            </p>
+          )}
+
+          {/* Actions */}
+          {service.status === 'scheduled' && (
+            <div className="flex gap-2 pt-2">
+              <Button 
+                size="sm" 
+                className="flex-1"
+                onClick={() => handleStartService(service)}
+              >
+                <PlayCircle className="h-4 w-4 mr-1" />
+                Iniciar
+              </Button>
+              {isAdmin && (
+                <Button 
+                  size="sm" 
+                  variant="destructive"
+                  onClick={() => handleCancelService(service)}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
+          {service.status === 'in_progress' && (
+            <div className="flex gap-2 pt-2">
+              <Button 
+                size="sm" 
+                className="flex-1 bg-green-600 hover:bg-green-700"
+                onClick={() => handleCompleteService(service)}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                Completar
+              </Button>
+            </div>
+          )}
+          {service.status === 'completed' && service.completed_notes && (
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground">Notas de cierre:</p>
+              <p className="text-sm">{service.completed_notes}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // Render table view
+  const renderTableView = () => {
+    return (
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Título</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Cliente/Prospecto</TableHead>
+              <TableHead>Técnico</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Hora</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredServices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  No hay servicios que coincidan con los filtros
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredServices.map((service) => {
+                const typeInfo = SERVICE_TYPES[service.service_type] || SERVICE_TYPES.other;
+                const statusInfo = SERVICE_STATUS[service.status];
+                const StatusIcon = statusInfo.icon;
+
+                return (
+                  <TableRow key={service.id}>
+                    <TableCell className="font-medium">{service.title}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="whitespace-nowrap">
+                        {typeInfo.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{getPersonName(service)}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                          {getAddress(service)}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>{service.employee_name}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {format(new Date(service.scheduled_date), "dd/MM/yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      {service.scheduled_time ? service.scheduled_time.slice(0, 5) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={`${statusInfo.color} text-white whitespace-nowrap`}>
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {statusInfo.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {service.status === 'scheduled' && (
+                          <>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleStartService(service)}
+                            >
+                              <PlayCircle className="h-4 w-4" />
+                            </Button>
+                            {isAdmin && (
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => handleCancelService(service)}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        {service.status === 'in_progress' && (
+                          <Button 
+                            size="sm" 
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => handleCompleteService(service)}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  };
+
   return (
     <AppLayout title="Agenda de Servicios">
       <div className="space-y-6">
@@ -341,6 +626,99 @@ export default function Services() {
             </Button>
           )}
         </div>
+
+        {/* Search and Filters Panel */}
+        <Card>
+          <CardContent className="pt-4 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <SearchInput
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="Buscar por título, cliente, dirección, técnico..."
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant={showFilters ? "secondary" : "outline"}
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="gap-2"
+                >
+                  <Filter className="h-4 w-4" />
+                  Filtros
+                  {hasActiveFilters && (
+                    <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                      !
+                    </Badge>
+                  )}
+                </Button>
+                <div className="flex border rounded-md">
+                  <Button
+                    variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setViewMode('kanban')}
+                    className="rounded-r-none"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    onClick={() => setViewMode('table')}
+                    className="rounded-l-none"
+                  >
+                    <TableIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Expanded Filters */}
+            {showFilters && (
+              <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
+                <div className="flex-1 space-y-2">
+                  <Label>Técnico Asignado</Label>
+                  <Select value={filterTechnician} onValueChange={setFilterTechnician}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos los técnicos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos los técnicos</SelectItem>
+                      {employees.map((e) => (
+                        <SelectItem key={e.user_id} value={e.user_id}>
+                          {e.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label>Cliente/Prospecto</Label>
+                  <Select value={filterClient} onValueChange={setFilterClient}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {serviceClientsProspects.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hasActiveFilters && (
+                  <div className="flex items-end">
+                    <Button variant="ghost" onClick={clearFilters}>
+                      Limpiar filtros
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Stats Cards */}
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -380,119 +758,29 @@ export default function Services() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : services.length === 0 ? (
+            ) : filteredServices.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No hay servicios en esta categoría</p>
+                  <p className="text-muted-foreground">
+                    {hasActiveFilters 
+                      ? 'No hay servicios que coincidan con los filtros'
+                      : 'No hay servicios en esta categoría'
+                    }
+                  </p>
+                  {hasActiveFilters && (
+                    <Button variant="link" onClick={clearFilters} className="mt-2">
+                      Limpiar filtros
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
-            ) : (
+            ) : viewMode === 'kanban' ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {services.map((service) => {
-                  const typeInfo = SERVICE_TYPES[service.service_type] || SERVICE_TYPES.other;
-                  const statusInfo = SERVICE_STATUS[service.status];
-                  const StatusIcon = statusInfo.icon;
-
-                  return (
-                    <Card key={service.id} className="overflow-hidden">
-                      <div className={`h-1 ${typeInfo.color}`} />
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-base">{service.title}</CardTitle>
-                            <Badge variant="outline" className="mt-1">
-                              {typeInfo.label}
-                            </Badge>
-                          </div>
-                          <Badge className={`${statusInfo.color} text-white`}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {statusInfo.label}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span>{getPersonName(service)}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <MapPin className="h-4 w-4 text-muted-foreground" />
-                          <span className="truncate">{getAddress(service)}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          <span>
-                            {format(new Date(service.scheduled_date), "dd 'de' MMMM, yyyy", { locale: es })}
-                          </span>
-                        </div>
-                        {service.scheduled_time && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span>{service.scheduled_time.slice(0, 5)} hrs</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-sm">
-                          <Wrench className="h-4 w-4 text-muted-foreground" />
-                          <span>Asignado a: {service.employee_name || 'Sin asignar'}</span>
-                        </div>
-                        {service.charge_amount && service.charge_amount > 0 && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <DollarSign className="h-4 w-4 text-muted-foreground" />
-                            <span>Cargo: {formatCurrency(service.charge_amount)}</span>
-                          </div>
-                        )}
-                        {service.description && (
-                          <p className="text-sm text-muted-foreground pt-2 border-t">
-                            {service.description}
-                          </p>
-                        )}
-
-                        {/* Actions */}
-                        {service.status === 'scheduled' && (
-                          <div className="flex gap-2 pt-2">
-                            <Button 
-                              size="sm" 
-                              className="flex-1"
-                              onClick={() => handleStartService(service)}
-                            >
-                              <PlayCircle className="h-4 w-4 mr-1" />
-                              Iniciar
-                            </Button>
-                            {isAdmin && (
-                              <Button 
-                                size="sm" 
-                                variant="destructive"
-                                onClick={() => handleCancelService(service)}
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                        {service.status === 'in_progress' && (
-                          <div className="flex gap-2 pt-2">
-                            <Button 
-                              size="sm" 
-                              className="flex-1 bg-green-600 hover:bg-green-700"
-                              onClick={() => handleCompleteService(service)}
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Completar
-                            </Button>
-                          </div>
-                        )}
-                        {service.status === 'completed' && service.completed_notes && (
-                          <div className="pt-2 border-t">
-                            <p className="text-xs text-muted-foreground">Notas de cierre:</p>
-                            <p className="text-sm">{service.completed_notes}</p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                {filteredServices.map(renderServiceCard)}
               </div>
+            ) : (
+              renderTableView()
             )}
           </TabsContent>
         </Tabs>
