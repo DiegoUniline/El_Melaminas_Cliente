@@ -107,14 +107,13 @@ export default function Services() {
   const [completedNotes, setCompletedNotes] = useState('');
   
   // New state for search, filters, and view mode
-  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [filterClient, setFilterClient] = useState<string>('all');
   const [filterTechnician, setFilterTechnician] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [showFilters, setShowFilters] = useState(false);
   
   const [formData, setFormData] = useState({
     client_id: '',
@@ -660,44 +659,28 @@ export default function Services() {
                   placeholder="Buscar por título, cliente, dirección, técnico..."
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex border rounded-md">
                 <Button
-                  variant={showFilters ? "secondary" : "outline"}
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="gap-2"
+                  variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  onClick={() => setViewMode('kanban')}
+                  className="rounded-r-none"
                 >
-                  <Filter className="h-4 w-4" />
-                  Filtros
-                  {hasActiveFilters && (
-                    <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                      !
-                    </Badge>
-                  )}
+                  <LayoutGrid className="h-4 w-4" />
                 </Button>
-                <div className="flex border rounded-md">
-                  <Button
-                    variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    onClick={() => setViewMode('kanban')}
-                    className="rounded-r-none"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-                    size="icon"
-                    onClick={() => setViewMode('table')}
-                    className="rounded-l-none"
-                  >
-                    <TableIcon className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Button
+                  variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  onClick={() => setViewMode('table')}
+                  className="rounded-l-none"
+                >
+                  <TableIcon className="h-4 w-4" />
+                </Button>
               </div>
             </div>
 
-            {/* Expanded Filters */}
-            {showFilters && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-4 border-t">
+            {/* Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-4 border-t">
                 <div className="space-y-2">
                   <Label>Fecha Desde</Label>
                   <Input
@@ -770,7 +753,6 @@ export default function Services() {
                   </div>
                 )}
               </div>
-            )}
           </CardContent>
         </Card>
 
