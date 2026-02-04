@@ -30,10 +30,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Navigation,
-  ExternalLink,
-  Clock,
-  User
+  Navigation
 } from 'lucide-react';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -251,10 +248,6 @@ export default function VisitsReport() {
     return service.completed_notes?.includes('[No había nadie');
   };
 
-  const openInMaps = (lat: number, lng: number) => {
-    window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
-  };
-
   return (
     <AppLayout title="Reporte de Visitas">
       <div className="space-y-4">
@@ -413,27 +406,28 @@ export default function VisitsReport() {
                           anchor={[service.visit_latitude!, service.visit_longitude!]}
                           offset={[0, -20]}
                         >
-                          <div className="bg-background border rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]">
+                          <div 
+                            className="bg-background border rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <div className="space-y-2">
                               <div className="flex items-start justify-between gap-2">
                                 <p className="font-semibold text-sm">{service.title}</p>
                                 <button 
                                   onClick={() => setSelectedMarker(null)}
-                                  className="text-muted-foreground hover:text-foreground"
+                                  className="text-muted-foreground hover:text-foreground text-lg leading-none"
                                 >
                                   ×
                                 </button>
                               </div>
                               <p className="text-xs">{getPersonName(service)}</p>
                               <p className="text-xs text-muted-foreground">{getAddress(service)}</p>
-                              <div className="flex items-center gap-2">
-                                <Badge 
-                                  className="text-xs text-white"
-                                  style={{ backgroundColor: getMarkerColor(service) }}
-                                >
-                                  {isNoOneHome(service) ? 'Sin nadie' : SERVICE_STATUS[service.status]?.label}
-                                </Badge>
-                              </div>
+                              <span 
+                                className="inline-block text-xs text-white px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: getMarkerColor(service) }}
+                              >
+                                {isNoOneHome(service) ? 'Sin nadie' : SERVICE_STATUS[service.status]?.label}
+                              </span>
                               <div className="text-xs space-y-1">
                                 <p><strong>Técnico:</strong> {service.employee_name}</p>
                                 {service.visit_started_at && (
@@ -443,15 +437,6 @@ export default function VisitsReport() {
                                   <p><strong>Duración:</strong> {getDuration(service)}</p>
                                 )}
                               </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-full mt-2"
-                                onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
-                              >
-                                <ExternalLink className="h-3 w-3 mr-1" />
-                                Ver en Google Maps
-                              </Button>
                             </div>
                           </div>
                         </Overlay>
@@ -532,18 +517,11 @@ export default function VisitsReport() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           {service.visit_latitude && service.visit_longitude ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2"
-                              onClick={() => openInMaps(service.visit_latitude!, service.visit_longitude!)}
-                            >
-                              <MapPin className="h-4 w-4 text-green-500" />
-                            </Button>
+                            <MapPin className="h-4 w-4 text-green-500 mx-auto" />
                           ) : (
-                            <XCircle className="h-4 w-4 text-muted-foreground" />
+                            <XCircle className="h-4 w-4 text-muted-foreground mx-auto" />
                           )}
                         </TableCell>
                       </TableRow>
