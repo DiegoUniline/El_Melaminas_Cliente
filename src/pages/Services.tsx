@@ -66,7 +66,7 @@ const SERVICE_TYPES = {
 
 const SERVICE_STATUS = {
   scheduled: { label: 'Programado', color: 'bg-blue-500', icon: Calendar },
-  in_progress: { label: 'En Progreso', color: 'bg-yellow-500', icon: PlayCircle },
+  in_progress: { label: 'En Visita', color: 'bg-yellow-500', icon: PlayCircle },
   completed: { label: 'Completado', color: 'bg-green-500', icon: CheckCircle2 },
   cancelled: { label: 'Cancelado', color: 'bg-red-500', icon: XCircle },
 };
@@ -748,7 +748,7 @@ export default function Services() {
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="all">Todos</TabsTrigger>
             <TabsTrigger value="scheduled">Programados</TabsTrigger>
-            <TabsTrigger value="in_progress">En Progreso</TabsTrigger>
+            <TabsTrigger value="in_progress">En Visita</TabsTrigger>
             <TabsTrigger value="completed">Completados</TabsTrigger>
             <TabsTrigger value="cancelled">Cancelados</TabsTrigger>
           </TabsList>
