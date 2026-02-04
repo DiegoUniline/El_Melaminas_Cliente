@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { 
   ChevronLeft, 
@@ -98,12 +99,17 @@ export function ServicesScheduleGrid({ services, employees, onServiceClick }: Se
     return services.filter(s => s.assigned_to === selectedTechnician);
   }, [services, selectedTechnician]);
 
+  // Helper to create dateKey without UTC issues
+  const getDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
   // Create a map of services by date and hour
   const serviceGrid = useMemo(() => {
     const grid: Record<string, Record<number, ScheduledService[]>> = {};
     
     dates.forEach(date => {
-      const dateKey = format(date, 'yyyy-MM-dd');
+      const dateKey = getDateKey(date);
       grid[dateKey] = {};
       HOURS.forEach(hour => {
         grid[dateKey][hour] = [];
@@ -264,7 +270,7 @@ export function ServicesScheduleGrid({ services, employees, onServiceClick }: Se
                       {hour.toString().padStart(2, '0')}:00
                     </div>
                     {dates.map((date) => {
-                      const dateKey = format(date, 'yyyy-MM-dd');
+                      const dateKey = getDateKey(date);
                       const cellServices = serviceGrid[dateKey]?.[hour] || [];
                       
                       return (
@@ -323,7 +329,7 @@ export function ServicesScheduleGrid({ services, employees, onServiceClick }: Se
                                         </div>
                                         <div className="flex items-center gap-2">
                                           <CalendarIcon className="h-3 w-3 text-muted-foreground shrink-0" />
-                                          <span>{format(new Date(service.scheduled_date), "dd 'de' MMMM", { locale: es })}</span>
+                                          <span>{format(parseISO(service.scheduled_date), "dd 'de' MMMM", { locale: es })}</span>
                                         </div>
                                         {service.scheduled_time && (
                                           <div className="flex items-center gap-2">

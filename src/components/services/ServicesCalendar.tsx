@@ -10,7 +10,7 @@ import {
   User,
   MapPin
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday, getDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday, getDay, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
   Popover,
@@ -85,6 +85,7 @@ export function ServicesCalendar({ services, onServiceClick }: ServicesCalendarP
   const servicesByDate = useMemo(() => {
     const map: Record<string, ScheduledService[]> = {};
     services.forEach(service => {
+      // El scheduled_date ya viene como string 'yyyy-MM-dd', usarlo directamente
       const dateKey = service.scheduled_date;
       if (!map[dateKey]) {
         map[dateKey] = [];
@@ -190,7 +191,8 @@ export function ServicesCalendar({ services, onServiceClick }: ServicesCalendarP
                 return <div key={`empty-${index}`} className="min-h-[100px] sm:min-h-[120px]" />;
               }
 
-              const dateKey = format(day, 'yyyy-MM-dd');
+              // Crear dateKey manualmente para evitar problemas de UTC
+              const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
               const dayServices = servicesByDate[dateKey] || [];
               const isCurrentMonth = isSameMonth(day, currentMonth);
               const isDayToday = isToday(day);
@@ -256,7 +258,7 @@ export function ServicesCalendar({ services, onServiceClick }: ServicesCalendarP
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <CalendarIcon className="h-3 w-3 text-muted-foreground shrink-0" />
-                                  <span>{format(new Date(service.scheduled_date), "dd 'de' MMMM", { locale: es })}</span>
+                                  <span>{format(parseISO(service.scheduled_date), "dd 'de' MMMM", { locale: es })}</span>
                                 </div>
                                 {service.scheduled_time && (
                                   <div className="flex items-center gap-2">
