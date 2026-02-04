@@ -170,7 +170,9 @@ export default function VisitsReport() {
   }, [services, statusFilter, technicianFilter, typeFilter, searchQuery]);
 
   // Services with GPS
-  const servicesWithGPS = filteredServices.filter(s => s.visit_latitude && s.visit_longitude);
+  const servicesWithGPS = useMemo(() => {
+    return filteredServices.filter(s => s.visit_latitude && s.visit_longitude);
+  }, [filteredServices]);
 
   // Calculate map center and zoom
   const mapConfig = useMemo(() => {
