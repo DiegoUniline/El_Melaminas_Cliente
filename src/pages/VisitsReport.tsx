@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -30,7 +30,10 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Navigation
+  Navigation,
+  ZoomIn,
+  ZoomOut,
+  Maximize2
 } from 'lucide-react';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -99,6 +102,8 @@ export default function VisitsReport() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
+  const [mapZoom, setMapZoom] = useState(12);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([23.6345, -102.5528]);
 
   // Fetch employees
   const { data: employees = [] } = useQuery({
@@ -196,6 +201,14 @@ export default function VisitsReport() {
     
     return { center: [centerLat, centerLng] as [number, number], zoom };
   }, [servicesWithGPS]);
+
+  // Auto-center map when data loads
+  useEffect(() => {
+    if (servicesWithGPS.length > 0) {
+      setMapCenter(mapConfig.center);
+      setMapZoom(mapConfig.zoom);
+    }
+  }, [mapConfig.center[0], mapConfig.center[1], mapConfig.zoom, servicesWithGPS.length]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -380,69 +393,129 @@ export default function VisitsReport() {
         {viewMode === 'map' ? (
           <Card>
             <CardContent className="p-0">
-              <div className="h-[500px] rounded-lg overflow-hidden">
+              <div className="h-[500px] rounded-lg overflow-hidden relative">
                 {servicesWithGPS.length > 0 ? (
-                  <PigeonMap
-                    defaultCenter={mapConfig.center}
-                    defaultZoom={mapConfig.zoom}
-                    onClick={() => setSelectedMarker(null)}
-                  >
-                    {servicesWithGPS.map((service) => (
-                      <Marker
-                        key={service.id}
-                        anchor={[service.visit_latitude!, service.visit_longitude!]}
-                        color={getMarkerColor(service)}
-                        width={40}
-                        onClick={() => setSelectedMarker(service.id)}
-                      />
-                    ))}
-                    
-                    {/* Popup overlay for selected marker */}
-                    {selectedMarker && (() => {
-                      const service = servicesWithGPS.find(s => s.id === selectedMarker);
-                      if (!service) return null;
-                      return (
-                        <Overlay
+                  <>
+                    <PigeonMap
+                      center={mapCenter}
+                      zoom={mapZoom}
+                      onBoundsChanged={({ center, zoom }) => {
+                        setMapCenter(center);
+                        setMapZoom(zoom);
+                      }}
+                      onClick={() => setSelectedMarker(null)}
+                    >
+                      {servicesWithGPS.map((service) => (
+                        <Marker
+                          key={service.id}
                           anchor={[service.visit_latitude!, service.visit_longitude!]}
-                          offset={[0, -20]}
-                        >
-                          <div 
-                            className="bg-background border rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]"
-                            onClick={(e) => e.stopPropagation()}
+                          color={getMarkerColor(service)}
+                          width={40}
+                          onClick={() => setSelectedMarker(service.id)}
+                        />
+                      ))}
+                      
+                      {/* Popup overlay for selected marker */}
+                      {selectedMarker && (() => {
+                        const service = servicesWithGPS.find(s => s.id === selectedMarker);
+                        if (!service) return null;
+                        return (
+                          <Overlay
+                            anchor={[service.visit_latitude!, service.visit_longitude!]}
+                            offset={[0, -20]}
                           >
-                            <div className="space-y-2">
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="font-semibold text-sm">{service.title}</p>
-                                <button 
-                                  onClick={() => setSelectedMarker(null)}
-                                  className="text-muted-foreground hover:text-foreground text-lg leading-none"
+                            <div 
+                              className="bg-background border rounded-lg shadow-lg p-3 min-w-[220px] max-w-[280px]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="font-semibold text-sm">{service.title}</p>
+                                  <button 
+                                    onClick={() => setSelectedMarker(null)}
+                                    className="text-muted-foreground hover:text-foreground text-lg leading-none"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <p className="text-xs">{getPersonName(service)}</p>
+                                <p className="text-xs text-muted-foreground">{getAddress(service)}</p>
+                                <span 
+                                  className="inline-block text-xs text-white px-2 py-0.5 rounded-full"
+                                  style={{ backgroundColor: getMarkerColor(service) }}
                                 >
-                                  ×
-                                </button>
-                              </div>
-                              <p className="text-xs">{getPersonName(service)}</p>
-                              <p className="text-xs text-muted-foreground">{getAddress(service)}</p>
-                              <span 
-                                className="inline-block text-xs text-white px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: getMarkerColor(service) }}
-                              >
-                                {isNoOneHome(service) ? 'Sin nadie' : SERVICE_STATUS[service.status]?.label}
-                              </span>
-                              <div className="text-xs space-y-1">
-                                <p><strong>Técnico:</strong> {service.employee_name}</p>
-                                {service.visit_started_at && (
-                                  <p><strong>Llegada:</strong> {format(parseISO(service.visit_started_at), "dd/MM HH:mm")}</p>
-                                )}
-                                {service.completed_at && (
-                                  <p><strong>Duración:</strong> {getDuration(service)}</p>
-                                )}
+                                  {isNoOneHome(service) ? 'Sin nadie' : SERVICE_STATUS[service.status]?.label}
+                                </span>
+                                <div className="text-xs space-y-1">
+                                  <p><strong>Técnico:</strong> {service.employee_name}</p>
+                                  {service.visit_started_at && (
+                                    <p><strong>Llegada:</strong> {format(parseISO(service.visit_started_at), "dd/MM HH:mm")}</p>
+                                  )}
+                                  {service.completed_at && (
+                                    <p><strong>Duración:</strong> {getDuration(service)}</p>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Overlay>
-                      );
-                    })()}
-                  </PigeonMap>
+                          </Overlay>
+                        );
+                      })()}
+                    </PigeonMap>
+                    
+                    {/* Zoom Controls */}
+                    <div className="absolute top-3 right-3 flex flex-col gap-1 z-10">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-9 w-9 shadow-md"
+                        onClick={() => setMapZoom(z => Math.min(z + 1, 18))}
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-9 w-9 shadow-md"
+                        onClick={() => setMapZoom(z => Math.max(z - 1, 3))}
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-9 w-9 shadow-md"
+                        onClick={() => {
+                          setMapCenter(mapConfig.center);
+                          setMapZoom(mapConfig.zoom);
+                        }}
+                        title="Ver todos los marcadores"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    {/* Legend */}
+                    <div className="absolute bottom-3 left-3 bg-background/90 backdrop-blur-sm rounded-lg p-2 shadow-md z-10">
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        <div className="flex items-center gap-1">
+                          <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                          <span>Completado</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+                          <span>En visita</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="w-3 h-3 rounded-full bg-orange-500"></span>
+                          <span>Sin nadie</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                          <span>Cancelado</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <div className="h-full flex items-center justify-center bg-muted/20">
                     <div className="text-center">
