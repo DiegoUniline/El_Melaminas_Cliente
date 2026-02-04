@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -112,6 +113,9 @@ export default function Services() {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<ScheduledService | null>(null);
   const [completedNotes, setCompletedNotes] = useState('');
+  const [workPerformed, setWorkPerformed] = useState('');
+  const [receivedByName, setReceivedByName] = useState('');
+  const [serviceAcknowledged, setServiceAcknowledged] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [changeStatusDialogOpen, setChangeStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<ServiceStatus>('scheduled');
@@ -348,11 +352,21 @@ export default function Services() {
 
   // Update status mutation
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, notes }: { id: string; status: ServiceStatus; notes?: string }) => {
+    mutationFn: async ({ id, status, notes, workPerformed, receivedByName, serviceAcknowledged }: { 
+      id: string; 
+      status: ServiceStatus; 
+      notes?: string;
+      workPerformed?: string;
+      receivedByName?: string;
+      serviceAcknowledged?: boolean;
+    }) => {
       const updateData: Record<string, unknown> = { status };
       if (status === 'completed') {
         updateData.completed_at = new Date().toISOString();
         updateData.completed_notes = notes || null;
+        updateData.work_performed = workPerformed || null;
+        updateData.received_by_name = receivedByName || null;
+        updateData.service_acknowledged = serviceAcknowledged || false;
       }
       const { error } = await supabase
         .from('scheduled_services')
@@ -366,6 +380,9 @@ export default function Services() {
       setCompleteDialogOpen(false);
       setSelectedService(null);
       setCompletedNotes('');
+      setWorkPerformed('');
+      setReceivedByName('');
+      setServiceAcknowledged(false);
     },
     onError: (error) => {
       toast.error('Error al actualizar: ' + error.message);
@@ -418,7 +435,10 @@ export default function Services() {
       updateStatusMutation.mutate({ 
         id: selectedService.id, 
         status: 'completed',
-        notes: completedNotes 
+        notes: completedNotes,
+        workPerformed,
+        receivedByName,
+        serviceAcknowledged
       });
     }
   };
@@ -1057,22 +1077,85 @@ export default function Services() {
       </Dialog>
 
       {/* Complete Service Dialog */}
-      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
-        <DialogContent>
+      <Dialog open={completeDialogOpen} onOpenChange={(open) => {
+        setCompleteDialogOpen(open);
+        if (!open) {
+          setCompletedNotes('');
+          setWorkPerformed('');
+          setReceivedByName('');
+          setServiceAcknowledged(false);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Completar Servicio</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              Completar Servicio
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              ¿Confirmas que el servicio "{selectedService?.title}" ha sido completado?
-            </p>
+            {/* Service info */}
+            <div className="bg-muted/50 p-3 rounded-lg">
+              <p className="font-medium">{selectedService?.title}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Fecha de finalización: {format(new Date(), "dd 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })}
+              </p>
+            </div>
+
+            {/* Work performed - Required */}
             <div className="space-y-2">
-              <Label>Notas de cierre (opcional)</Label>
+              <Label className="flex items-center gap-1">
+                <Wrench className="h-4 w-4" />
+                ¿Qué trabajo se realizó? <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                value={workPerformed}
+                onChange={(e) => setWorkPerformed(e.target.value)}
+                placeholder="Describe detalladamente el trabajo realizado..."
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+
+            {/* Received by */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1">
+                <User className="h-4 w-4" />
+                ¿Quién recibió el servicio?
+              </Label>
+              <Input
+                value={receivedByName}
+                onChange={(e) => setReceivedByName(e.target.value)}
+                placeholder="Nombre de quien recibió"
+              />
+            </div>
+
+            {/* Acknowledgment */}
+            <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <Checkbox
+                id="serviceAcknowledged"
+                checked={serviceAcknowledged}
+                onCheckedChange={(checked) => setServiceAcknowledged(checked === true)}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="serviceAcknowledged" className="cursor-pointer font-medium">
+                  Confirmación de recibido
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  El cliente confirma que el servicio fue realizado satisfactoriamente
+                </p>
+              </div>
+            </div>
+
+            {/* Additional notes */}
+            <div className="space-y-2">
+              <Label>Notas adicionales (opcional)</Label>
               <Textarea
                 value={completedNotes}
                 onChange={(e) => setCompletedNotes(e.target.value)}
-                placeholder="Observaciones del servicio realizado..."
-                rows={3}
+                placeholder="Observaciones adicionales..."
+                rows={2}
+                className="resize-none"
               />
             </div>
           </div>
@@ -1083,10 +1166,10 @@ export default function Services() {
             <Button 
               className="bg-green-600 hover:bg-green-700"
               onClick={confirmComplete}
-              disabled={updateStatusMutation.isPending}
+              disabled={updateStatusMutation.isPending || !workPerformed.trim()}
             >
               {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Confirmar
+              Completar Servicio
             </Button>
           </DialogFooter>
         </DialogContent>
