@@ -32,6 +32,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SearchInput } from '@/components/shared/SearchInput';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { 
   Plus, 
   Calendar, 
@@ -715,35 +716,35 @@ export default function Services() {
                 </div>
                 <div className="space-y-2">
                   <Label>Cliente/Prospecto</Label>
-                  <Select value={filterClient} onValueChange={setFilterClient}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {serviceClientsProspects.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={filterClient}
+                    onChange={setFilterClient}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      ...serviceClientsProspects.map((item) => ({
+                        value: item.id,
+                        label: item.name,
+                      })),
+                    ]}
+                    placeholder="Todos"
+                    searchPlaceholder="Buscar cliente..."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Técnico Asignado</Label>
-                  <Select value={filterTechnician} onValueChange={setFilterTechnician}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {employees.map((e) => (
-                        <SelectItem key={e.user_id} value={e.user_id}>
-                          {e.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={filterTechnician}
+                    onChange={setFilterTechnician}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      ...employees.map((e) => ({
+                        value: e.user_id,
+                        label: e.full_name,
+                      })),
+                    ]}
+                    placeholder="Todos"
+                    searchPlaceholder="Buscar técnico..."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Estado</Label>
