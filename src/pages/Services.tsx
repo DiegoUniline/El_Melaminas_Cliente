@@ -47,9 +47,11 @@ import {
   DollarSign,
   LayoutGrid,
   TableIcon,
-  CalendarDays
+  CalendarDays,
+  CalendarClock
 } from 'lucide-react';
 import { ServicesCalendar } from '@/components/services/ServicesCalendar';
+import { ServicesScheduleGrid } from '@/components/services/ServicesScheduleGrid';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -75,7 +77,7 @@ const SERVICE_STATUS = {
 
 type ServiceType = keyof typeof SERVICE_TYPES;
 type ServiceStatus = keyof typeof SERVICE_STATUS;
-type ViewMode = 'kanban' | 'table' | 'calendar';
+type ViewMode = 'kanban' | 'table' | 'calendar' | 'schedule';
 
 interface ScheduledService {
   id: string;
@@ -108,7 +110,7 @@ export default function Services() {
   const [completedNotes, setCompletedNotes] = useState('');
   
   // New state for search, filters, and view mode
-  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [viewMode, setViewMode] = useState<ViewMode>('schedule');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
@@ -662,11 +664,19 @@ export default function Services() {
               </div>
               <div className="flex border rounded-md">
                 <Button
+                  variant={viewMode === 'schedule' ? 'secondary' : 'ghost'}
+                  size="icon"
+                  onClick={() => setViewMode('schedule')}
+                  className="rounded-r-none"
+                  title="Vista Agenda (Horas x Días)"
+                >
+                  <CalendarClock className="h-4 w-4" />
+                </Button>
+                <Button
                   variant={viewMode === 'calendar' ? 'secondary' : 'ghost'}
                   size="icon"
                   onClick={() => setViewMode('calendar')}
-                  className="rounded-r-none"
-                  title="Vista Calendario"
+                  title="Vista Calendario Mensual"
                 >
                   <CalendarDays className="h-4 w-4" />
                 </Button>
@@ -822,6 +832,8 @@ export default function Services() {
                   )}
                 </CardContent>
               </Card>
+            ) : viewMode === 'schedule' ? (
+              <ServicesScheduleGrid services={filteredServices} employees={employees} />
             ) : viewMode === 'calendar' ? (
               <ServicesCalendar services={filteredServices} />
             ) : viewMode === 'kanban' ? (
