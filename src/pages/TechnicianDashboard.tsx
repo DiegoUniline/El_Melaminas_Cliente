@@ -15,6 +15,13 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { 
   Calendar, 
   Clock, 
   User, 
@@ -30,7 +37,8 @@ import {
   Home,
   Users,
   ClipboardList,
-  AlertCircle
+  AlertCircle,
+  Navigation
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -50,10 +58,17 @@ const SERVICE_TYPES = {
 
 const SERVICE_STATUS = {
   scheduled: { label: 'Programado', color: 'bg-blue-500', icon: Calendar },
-  in_progress: { label: 'En Progreso', color: 'bg-yellow-500', icon: PlayCircle },
+  in_progress: { label: 'En Visita', color: 'bg-yellow-500', icon: PlayCircle },
   completed: { label: 'Completado', color: 'bg-green-500', icon: CheckCircle2 },
   cancelled: { label: 'Cancelado', color: 'bg-red-500', icon: XCircle },
 };
+
+const COMPLETION_REASONS = [
+  { value: 'completed', label: 'Servicio completado correctamente' },
+  { value: 'no_one_home', label: 'No había nadie en el domicilio' },
+  { value: 'rescheduled', label: 'Cliente solicitó reprogramar' },
+  { value: 'other', label: 'Otro motivo' },
+];
 
 type ServiceType = keyof typeof SERVICE_TYPES;
 type ServiceStatus = keyof typeof SERVICE_STATUS;
@@ -119,10 +134,13 @@ export default function TechnicianDashboard() {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedService, setSelectedService] = useState<ScheduledService | null>(null);
   const [completedNotes, setCompletedNotes] = useState('');
+  const [completionReason, setCompletionReason] = useState('completed');
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailService, setDetailService] = useState<ScheduledService | null>(null);
   const [prospectDetailOpen, setProspectDetailOpen] = useState(false);
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
+  const [startingService, setStartingService] = useState<string | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   // Fetch my assigned services
   const { data: myServices = [], isLoading: loadingServices } = useQuery({
@@ -190,12 +208,34 @@ export default function TechnicianDashboard() {
 
   // Update status mutation
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, notes }: { id: string; status: ServiceStatus; notes?: string }) => {
+    mutationFn: async ({ 
+      id, 
+      status, 
+      notes,
+      visit_started_at,
+      visit_latitude,
+      visit_longitude
+    }: { 
+      id: string; 
+      status: ServiceStatus; 
+      notes?: string;
+      visit_started_at?: string;
+      visit_latitude?: number;
+      visit_longitude?: number;
+    }) => {
       const updateData: Record<string, unknown> = { status };
+      
+      if (status === 'in_progress' && visit_started_at) {
+        updateData.visit_started_at = visit_started_at;
+        updateData.visit_latitude = visit_latitude || null;
+        updateData.visit_longitude = visit_longitude || null;
+      }
+      
       if (status === 'completed') {
         updateData.completed_at = new Date().toISOString();
         updateData.completed_notes = notes || null;
       }
+      
       const { error } = await supabase
         .from('scheduled_services')
         .update(updateData)
@@ -209,14 +249,53 @@ export default function TechnicianDashboard() {
       setCompleteDialogOpen(false);
       setSelectedService(null);
       setCompletedNotes('');
+      setCompletionReason('completed');
+      setStartingService(null);
+      setGpsLoading(false);
     },
     onError: (error) => {
       toast.error('Error: ' + error.message);
+      setStartingService(null);
+      setGpsLoading(false);
     },
   });
 
-  const handleStartService = (service: ScheduledService) => {
-    updateStatusMutation.mutate({ id: service.id, status: 'in_progress' });
+  const handleStartService = async (service: ScheduledService) => {
+    setStartingService(service.id);
+    setGpsLoading(true);
+    
+    const visit_started_at = new Date().toISOString();
+    let visit_latitude: number | undefined;
+    let visit_longitude: number | undefined;
+    
+    // Try to get GPS coordinates
+    if (navigator.geolocation) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          });
+        });
+        visit_latitude = position.coords.latitude;
+        visit_longitude = position.coords.longitude;
+        toast.success(`Ubicación capturada: ${visit_latitude.toFixed(6)}, ${visit_longitude.toFixed(6)}`);
+      } catch (gpsError) {
+        console.error('GPS error:', gpsError);
+        toast.warning('No se pudo obtener la ubicación GPS, pero se registró la hora de inicio');
+      }
+    } else {
+      toast.warning('GPS no disponible en este dispositivo');
+    }
+    
+    updateStatusMutation.mutate({ 
+      id: service.id, 
+      status: 'in_progress',
+      visit_started_at,
+      visit_latitude,
+      visit_longitude
+    });
   };
 
   const handleCompleteService = (service: ScheduledService) => {
@@ -226,10 +305,15 @@ export default function TechnicianDashboard() {
 
   const confirmComplete = () => {
     if (selectedService) {
+      const reasonLabel = COMPLETION_REASONS.find(r => r.value === completionReason)?.label || '';
+      const finalNotes = completionReason === 'completed' 
+        ? completedNotes 
+        : `[${reasonLabel}] ${completedNotes}`.trim();
+      
       updateStatusMutation.mutate({ 
         id: selectedService.id, 
         status: 'completed',
-        notes: completedNotes 
+        notes: finalNotes 
       });
     }
   };
@@ -419,12 +503,17 @@ export default function TechnicianDashboard() {
                                     <Button 
                                       size="sm" 
                                       className="h-8"
+                                      disabled={startingService === service.id}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleStartService(service);
                                       }}
                                     >
-                                      <PlayCircle className="h-4 w-4" />
+                                      {startingService === service.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Navigation className="h-4 w-4" />
+                                      )}
                                     </Button>
                                   )}
                                   {isInProgress && (
@@ -645,13 +734,18 @@ export default function TechnicianDashboard() {
                 {detailService.status === 'scheduled' && (
                   <Button 
                     className="w-full"
+                    disabled={startingService === detailService.id}
                     onClick={() => {
                       handleStartService(detailService);
                       setDetailDialogOpen(false);
                     }}
                   >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Iniciar Servicio
+                    {startingService === detailService.id ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Navigation className="h-4 w-4 mr-2" />
+                    )}
+                    En Visita (Iniciar + GPS)
                   </Button>
                 )}
                 {detailService.status === 'in_progress' && (
@@ -776,8 +870,28 @@ export default function TechnicianDashboard() {
             <p className="text-sm text-muted-foreground">
               ¿Completar el servicio "{selectedService?.title}"?
             </p>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Motivo de finalización</label>
+              <Select value={completionReason} onValueChange={setCompletionReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona el motivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMPLETION_REASONS.map((reason) => (
+                    <SelectItem key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
             <Textarea
-              placeholder="Notas del servicio completado (opcional)"
+              placeholder={completionReason === 'no_one_home' 
+                ? "Describe la situación (opcional)" 
+                : "Notas del servicio completado (opcional)"
+              }
               value={completedNotes}
               onChange={(e) => setCompletedNotes(e.target.value)}
               rows={3}
@@ -794,12 +908,19 @@ export default function TechnicianDashboard() {
               ) : (
                 <CheckCircle2 className="h-4 w-4 mr-2" />
               )}
-              Confirmar Completado
+              {completionReason === 'no_one_home' 
+                ? 'Marcar como Terminado (No había nadie)'
+                : 'Confirmar Completado'
+              }
             </Button>
             <Button 
               variant="outline" 
               className="w-full"
-              onClick={() => setCompleteDialogOpen(false)}
+              onClick={() => {
+                setCompleteDialogOpen(false);
+                setCompletionReason('completed');
+                setCompletedNotes('');
+              }}
             >
               Cancelar
             </Button>
