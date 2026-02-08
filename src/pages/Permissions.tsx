@@ -21,7 +21,8 @@ import {
   Trash2,
   CheckCircle2,
   XCircle,
-  MapPin
+  MapPin,
+  Settings
 } from 'lucide-react';
 import { 
   ALL_MODULES, 
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useCities, useUserCityAssignments } from '@/hooks/useCities';
+import { UserManagementDialog } from '@/components/users/UserManagementDialog';
 
 interface UserProfile {
   user_id: string;
@@ -69,6 +71,7 @@ export default function Permissions() {
   const [isSaving, setIsSaving] = useState(false);
   const [localPermissions, setLocalPermissions] = useState<Map<string, UserPermission>>(new Map());
   const [hasChanges, setHasChanges] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
 
   // Fetch all users (non-admins)
   const { data: users = [] } = useQuery({
@@ -354,6 +357,7 @@ export default function Permissions() {
   }
 
   return (
+    <>
     <AppLayout>
       <div className="space-y-6 p-6">
         <div className="flex items-center justify-between">
@@ -366,6 +370,10 @@ export default function Permissions() {
               Configura qué puede ver y hacer cada usuario en el sistema
             </p>
           </div>
+          <Button onClick={() => setShowUserManagement(true)}>
+            <Settings className="h-4 w-4 mr-2" />
+            Gestionar Usuarios
+          </Button>
         </div>
 
         <div className="grid lg:grid-cols-4 gap-6">
@@ -620,5 +628,11 @@ export default function Permissions() {
         </div>
       </div>
     </AppLayout>
+
+    <UserManagementDialog 
+      open={showUserManagement} 
+      onOpenChange={setShowUserManagement} 
+    />
+  </>
   );
 }
