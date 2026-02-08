@@ -185,3 +185,19 @@ export interface ClientWithDetails extends Client {
   billing?: ClientBilling;
   payments?: Payment[];
 }
+
+// Ciudades
+export interface City {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserCity {
+  id: string;
+  user_id: string;
+  city_id: string;
+  created_at: string;
+}

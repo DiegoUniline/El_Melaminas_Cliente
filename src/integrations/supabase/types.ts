@@ -104,6 +104,30 @@ export type Database = {
         }
         Relationships: []
       }
+      cities: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       client_billing: {
         Row: {
           additional_charges: number | null
@@ -277,6 +301,7 @@ export type Database = {
           cancellation_reason: string | null
           cancelled_at: string | null
           city: string
+          city_id: string | null
           contract_page1: string | null
           contract_page2: string | null
           created_at: string
@@ -308,6 +333,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           city: string
+          city_id?: string | null
           contract_page1?: string | null
           contract_page2?: string | null
           created_at?: string
@@ -339,6 +365,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           city?: string
+          city_id?: string | null
           contract_page1?: string | null
           contract_page2?: string | null
           created_at?: string
@@ -367,6 +394,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "clients_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clients_prospect_id_fkey"
             columns: ["prospect_id"]
@@ -741,6 +775,7 @@ export type Database = {
           cancellation_reason: string | null
           cancelled_at: string | null
           city: string
+          city_id: string | null
           created_at: string
           created_by: string | null
           exterior_number: string
@@ -773,6 +808,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           city: string
+          city_id?: string | null
           created_at?: string
           created_by?: string | null
           exterior_number: string
@@ -805,6 +841,7 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           city?: string
+          city_id?: string | null
           created_at?: string
           created_by?: string | null
           exterior_number?: string
@@ -830,7 +867,15 @@ export type Database = {
           updated_at?: string
           work_type?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "prospects_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       push_subscriptions: {
         Row: {
@@ -1001,6 +1046,35 @@ export type Database = {
         }
         Relationships: []
       }
+      user_cities: {
+        Row: {
+          city_id: string
+          created_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          city_id: string
+          created_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          city_id?: string
+          created_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_cities_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           can_create: boolean | null
@@ -1075,6 +1149,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      user_can_access_city: {
+        Args: { target_city_id: string; user_uuid: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "employee"
