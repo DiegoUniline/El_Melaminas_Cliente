@@ -40,6 +40,7 @@ import {
 import { formatCurrency } from '@/lib/billing';
 import { useCities, type City } from '@/hooks/useCities';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { EditUserDialog } from '@/components/users/EditUserDialog';
 
 // ========== TYPES ==========
 interface ChargeCatalog {
@@ -130,6 +131,8 @@ export default function Catalogs() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userForm, setUserForm] = useState({ full_name: '', email: '', password: '', role: 'employee' });
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<(UserWithRole & { user_id: string }) | null>(null);
+  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
   
   // ========== RESET PASSWORD STATE ==========
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
@@ -946,14 +949,15 @@ export default function Catalogs() {
                             </Badge>
                           </TableCell>
                           {isAdmin && (
-                            <TableCell className="text-right space-x-2">
-                              <Button variant="outline" size="sm" onClick={() => handleOpenResetPassword(user)}>
-                                <KeyRound className="h-4 w-4 mr-1" />
-                                Contraseña
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleChangeUserRole(user.user_id, user.role)}>
-                                {user.role === 'admin' ? 'Hacer Empleado' : 'Hacer Admin'}
-                              </Button>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => { setEditingUser(user); setEditUserDialogOpen(true); }}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => handleOpenResetPassword(user)}>
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -1114,6 +1118,13 @@ export default function Catalogs() {
       <ConfirmDialog open={!!togglePaymentMethodDialog} onOpenChange={() => setTogglePaymentMethodDialog(null)} title={togglePaymentMethodDialog?.is_active ? 'Desactivar Método' : 'Activar Método'} description={togglePaymentMethodDialog?.is_active ? `¿Desactivar "${togglePaymentMethodDialog?.name}"?` : `¿Activar "${togglePaymentMethodDialog?.name}"?`} confirmText={togglePaymentMethodDialog?.is_active ? 'Desactivar' : 'Activar'} variant={togglePaymentMethodDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleTogglePaymentMethod} />
       <ConfirmDialog open={!!toggleBankDialog} onOpenChange={() => setToggleBankDialog(null)} title={toggleBankDialog?.is_active ? 'Desactivar Banco' : 'Activar Banco'} description={toggleBankDialog?.is_active ? `¿Desactivar "${toggleBankDialog?.name}"?` : `¿Activar "${toggleBankDialog?.name}"?`} confirmText={toggleBankDialog?.is_active ? 'Desactivar' : 'Activar'} variant={toggleBankDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleToggleBank} />
       <ConfirmDialog open={!!toggleCityDialog} onOpenChange={() => setToggleCityDialog(null)} title={toggleCityDialog?.is_active ? 'Desactivar Ciudad' : 'Activar Ciudad'} description={toggleCityDialog?.is_active ? `¿Desactivar "${toggleCityDialog?.name}"?` : `¿Activar "${toggleCityDialog?.name}"?`} confirmText={toggleCityDialog?.is_active ? 'Desactivar' : 'Activar'} variant={toggleCityDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleToggleCity} />
+
+      {/* Edit User Dialog */}
+      <EditUserDialog 
+        open={editUserDialogOpen} 
+        onOpenChange={setEditUserDialogOpen} 
+        user={editingUser} 
+      />
     </AppLayout>
   );
 }
