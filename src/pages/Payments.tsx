@@ -16,13 +16,24 @@ import { Download, Eye, CreditCard, DollarSign, TrendingUp, Calendar } from 'luc
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/billing';
+import { useCities } from '@/hooks/useCities';
+import { useAuth } from '@/hooks/useAuth';
 import type { Payment, Client } from '@/types/database';
 
 type PaymentWithClient = Payment & {
-  clients: Pick<Client, 'id' | 'first_name' | 'last_name_paterno' | 'last_name_materno'>;
+  clients: {
+    id: string;
+    first_name: string;
+    last_name_paterno: string;
+    last_name_materno: string | null;
+    city_id: string | null;
+  } | null;
 };
 
 export default function Payments() {
+  const { isAdmin } = useAuth();
+  const { accessibleCityIds, isLoadingUserCities } = useCities();
+  
   const [search, setSearch] = useState('');
   const [selectedPayment, setSelectedPayment] = useState<PaymentWithClient | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -33,20 +44,32 @@ export default function Payments() {
   const [filterClient, setFilterClient] = useState('all');
 
   const { data: payments = [], isLoading } = useQuery({
-    queryKey: ['payments'],
+    queryKey: ['payments', accessibleCityIds],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('payments')
         .select(`
           *,
-          clients (id, first_name, last_name_paterno, last_name_materno)
+          clients (id, first_name, last_name_paterno, last_name_materno, city_id)
         `)
         .order('payment_date', { ascending: false })
         .limit(500);
 
       if (error) throw error;
-      return data as PaymentWithClient[];
+      
+      // Filter payments by accessible cities (client-side since RLS handles clients)
+      const filteredData = (data as PaymentWithClient[]).filter(payment => {
+        // If no client data, it means RLS blocked it - exclude
+        if (!payment.clients) return false;
+        // Admins see all
+        if (isAdmin) return true;
+        // Filter by user's accessible cities
+        return payment.clients.city_id && accessibleCityIds.includes(payment.clients.city_id);
+      });
+      
+      return filteredData;
     },
+    enabled: !isLoadingUserCities,
   });
 
   const { data: paymentMethods = [] } = useQuery({
