@@ -42,7 +42,7 @@ import { type PhoneCountry, formatPhoneDisplay, isPhoneComplete } from '@/lib/ph
 import { isValidIPAddress } from '@/lib/formatUtils';
 import { formatCurrency, calculateProration, formatDateMX } from '@/lib/billing';
 import { ConfirmFinalizeDialog } from './ConfirmFinalizeDialog';
-import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { ComboboxWithCreate } from '@/components/shared/ComboboxWithCreate';
 import { useCities } from '@/hooks/useCities';
 
 interface SelectedCharge {
@@ -109,7 +109,7 @@ export function FinalizeProspectDialog({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const pendingDataRef = useRef<FinalizeFormValues | null>(null);
   const { user } = useAuth();
-  const { activeCities } = useCities();
+  const { activeCities, invalidateCities } = useCities();
 
   // Fetch service plans
   const { data: servicePlans = [] } = useQuery({
@@ -752,11 +752,15 @@ export function FinalizeProspectDialog({
                       <FormItem>
                         <FormLabel>Ciudad</FormLabel>
                         <FormControl>
-                          <SearchableSelect
-                            options={activeCities.map(c => ({ value: c.id, label: c.name }))}
+                          <ComboboxWithCreate
                             value={field.value}
-                            onChange={field.onChange}
+                            onChange={(value) => field.onChange(value)}
+                            items={activeCities}
                             placeholder="Seleccionar ciudad..."
+                            searchPlaceholder="Buscar o crear ciudad..."
+                            emptyMessage="No se encontraron ciudades"
+                            tableName="cities"
+                            onItemCreated={() => invalidateCities()}
                           />
                         </FormControl>
                         <FormMessage />
