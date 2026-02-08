@@ -42,6 +42,8 @@ import { type PhoneCountry, formatPhoneDisplay, isPhoneComplete } from '@/lib/ph
 import { isValidIPAddress } from '@/lib/formatUtils';
 import { formatCurrency, calculateProration, formatDateMX } from '@/lib/billing';
 import { ConfirmFinalizeDialog } from './ConfirmFinalizeDialog';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { useCities } from '@/hooks/useCities';
 
 interface SelectedCharge {
   catalog_id: string;
@@ -65,7 +67,7 @@ const finalizeSchema = z.object({
   exterior_number: z.string().min(1, 'El número exterior es requerido'),
   interior_number: z.string().optional(),
   neighborhood: z.string().min(1, 'La colonia es requerida'),
-  city: z.string().min(1, 'La ciudad es requerida'),
+  city_id: z.string().min(1, 'La ciudad es requerida'),
   postal_code: z.string().optional(),
   // Technical
   ssid: z.string().optional(),
@@ -107,6 +109,7 @@ export function FinalizeProspectDialog({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const pendingDataRef = useRef<FinalizeFormValues | null>(null);
   const { user } = useAuth();
+  const { activeCities } = useCities();
 
   // Fetch service plans
   const { data: servicePlans = [] } = useQuery({
@@ -165,7 +168,7 @@ export function FinalizeProspectDialog({
       exterior_number: '',
       interior_number: '',
       neighborhood: '',
-      city: '',
+      city_id: '',
       postal_code: '',
       ssid: '',
       antenna_ip: '',
@@ -182,6 +185,9 @@ export function FinalizeProspectDialog({
   // Load prospect data when dialog opens
   useEffect(() => {
     if (prospect && open) {
+      // Find city_id from prospect.city if it exists
+      const cityId = prospect.city ? activeCities.find(c => c.name === prospect.city)?.id || '' : '';
+      
       form.reset({
         first_name: prospect.first_name || '',
         last_name_paterno: prospect.last_name_paterno || '',
@@ -196,7 +202,7 @@ export function FinalizeProspectDialog({
         exterior_number: prospect.exterior_number || '',
         interior_number: prospect.interior_number || '',
         neighborhood: prospect.neighborhood || '',
-        city: prospect.city || '',
+        city_id: cityId,
         postal_code: prospect.postal_code || '',
         ssid: prospect.ssid || '',
         antenna_ip: prospect.antenna_ip || '',
@@ -216,7 +222,7 @@ export function FinalizeProspectDialog({
       setSelectedChargeId('');
       setChargeAmount('');
     }
-  }, [prospect, open, form]);
+  }, [prospect, open, form, activeCities]);
 
   // Navigation handlers
   const handleNext = (e?: React.MouseEvent) => {
@@ -315,7 +321,7 @@ export function FinalizeProspectDialog({
       { key: 'exterior_number', label: 'Número Exterior' },
       { key: 'interior_number', label: 'Número Interior' },
       { key: 'neighborhood', label: 'Colonia' },
-      { key: 'city', label: 'Ciudad' },
+      { key: 'city_id', label: 'Ciudad' },
       { key: 'postal_code', label: 'Código Postal' },
       { key: 'ssid', label: 'SSID' },
       { key: 'antenna_ip', label: 'IP Antena' },
@@ -331,8 +337,14 @@ export function FinalizeProspectDialog({
     }[] = [];
 
     for (const field of fieldsToCompare) {
-      const oldValue = (originalData as any)[field.key] || '';
-      const newValue = (newData as any)[field.key] || '';
+      let oldValue = (originalData as any)[field.key] || '';
+      let newValue = (newData as any)[field.key] || '';
+
+      // For city_id field, convert to city name for display
+      if (field.key === 'city_id') {
+        oldValue = originalData.city || '';
+        newValue = activeCities.find(c => c.id === newValue)?.name || '';
+      }
 
       if (oldValue !== newValue) {
         changes.push({
@@ -395,6 +407,7 @@ export function FinalizeProspectDialog({
     setIsLoading(true);
     try {
       // 1. Update prospect with new data and finalize
+      const selectedCity = activeCities.find(c => c.id === data.city_id);
       const { error: prospectError } = await supabase
         .from('prospects')
         .update({
@@ -411,7 +424,8 @@ export function FinalizeProspectDialog({
           exterior_number: data.exterior_number,
           interior_number: data.interior_number || null,
           neighborhood: data.neighborhood,
-          city: data.city,
+          city: selectedCity?.name || '',
+          city_id: data.city_id,
           postal_code: data.postal_code || null,
           ssid: data.ssid || null,
           antenna_ip: data.antenna_ip || null,
@@ -440,7 +454,8 @@ export function FinalizeProspectDialog({
           exterior_number: data.exterior_number,
           interior_number: data.interior_number || null,
           neighborhood: data.neighborhood,
-          city: data.city,
+          city: selectedCity?.name || '',
+          city_id: data.city_id,
           postal_code: data.postal_code || null,
           prospect_id: prospect.id,
           created_by: user?.id || null,
@@ -498,174 +513,91 @@ export function FinalizeProspectDialog({
           console.error('Error creating billing:', billingError);
         }
 
-        // 6. Create initial charges in client_charges
-        // La fecha de vencimiento es la primera fecha de corte
-        const dueDate = firstBillingDate.toISOString().split('T')[0];
-        const chargesToCreate: any[] = [];
-
-        if (data.installation_cost > 0) {
-          chargesToCreate.push({
-            client_id: clientData.id,
-            description: 'Costo de instalación',
-            amount: data.installation_cost,
-            status: 'pending',
-            due_date: dueDate,
-            created_by: user?.id,
-          });
-        }
-
-        if (data.prorated_amount > 0) {
-          chargesToCreate.push({
-            client_id: clientData.id,
-            description: 'Prorrateo inicial',
-            amount: data.prorated_amount,
-            status: 'pending',
-            due_date: dueDate,
-            created_by: user?.id,
-          });
-        }
-
-        // Primera mensualidad (pago por adelantado)
-        if (data.monthly_fee > 0) {
-          // Calcular el mes que cubre la primera mensualidad
-          const firstBillingMonth = firstBillingDate.getUTCMonth();
-          const firstBillingYear = firstBillingDate.getUTCFullYear();
-          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-          
-          chargesToCreate.push({
-            client_id: clientData.id,
-            description: `Mensualidad ${monthNames[firstBillingMonth]} ${firstBillingYear}`,
-            amount: data.monthly_fee,
-            status: 'pending',
-            due_date: dueDate,
-            created_by: user?.id,
-          });
-        }
-
-        // Add charges from catalog
-        for (const charge of selectedCharges) {
-          chargesToCreate.push({
+        // 6. Create client charges from selected catalog items
+        if (selectedCharges.length > 0) {
+          const chargeRecords = selectedCharges.map(charge => ({
             client_id: clientData.id,
             charge_catalog_id: charge.catalog_id,
             description: charge.name,
             amount: charge.amount,
             status: 'pending',
-            due_date: dueDate,
-            created_by: user?.id,
-          });
-        }
+            created_by: user?.id || null,
+          }));
 
-        if (chargesToCreate.length > 0) {
           const { error: chargesError } = await supabase
             .from('client_charges')
-            .insert(chargesToCreate);
+            .insert(chargeRecords);
 
           if (chargesError) {
             console.error('Error creating charges:', chargesError);
           }
         }
-      }
 
-      const message = changesCount > 0 
-        ? `Prospecto finalizado con ${changesCount} cambio(s) registrado(s) en historial`
-        : 'Prospecto finalizado y cliente creado correctamente';
-      
-      toast.success(message);
-      setShowConfirmDialog(false);
-      pendingDataRef.current = null;
-      onOpenChange(false);
-      onSuccess();
+        toast.success(`Cliente creado exitosamente (${changesCount} cambios registrados)`);
+        onOpenChange(false);
+        onSuccess();
+      }
     } catch (error) {
       console.error('Error finalizing prospect:', error);
-      toast.error('Error al finalizar el prospecto');
+      toast.error('Error al finalizar el prospecto. Por favor intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isFirstTab = activeTab === 'personal';
-  const isLastTab = activeTab === 'summary';
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            Finalizar Prospecto
-          </DialogTitle>
-          <DialogDescription>
-            Revisa y modifica los datos si es necesario. Los cambios se guardarán en el historial.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Finalizar Prospecto: {prospect.first_name} {prospect.last_name_paterno}</DialogTitle>
+            <DialogDescription>
+              Completa toda la información para convertir el prospecto en cliente
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 text-sm">
-          <History className="h-4 w-4 text-muted-foreground" />
-          <span className="text-muted-foreground">
-            Si modificas algún campo, el valor anterior quedará registrado en el historial para futuras consultas.
-          </span>
-        </div>
-
-        <Form {...form}>
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className="w-full">
             <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
-              <TabsTrigger value="address" className="text-xs sm:text-sm">Dirección</TabsTrigger>
-              <TabsTrigger value="technical" className="text-xs sm:text-sm">Técnico</TabsTrigger>
-              <TabsTrigger value="billing" className="text-xs sm:text-sm flex items-center gap-1">
-                <DollarSign className="h-3 w-3 hidden sm:inline" />
-                Facturación
-              </TabsTrigger>
-              <TabsTrigger value="summary" className="text-xs sm:text-sm flex items-center gap-1 data-[state=active]:text-primary">
-                <ClipboardList className="h-3 w-3 hidden sm:inline" />
-                Resumen
-              </TabsTrigger>
+              <TabsTrigger value="personal">Personal</TabsTrigger>
+              <TabsTrigger value="address">Dirección</TabsTrigger>
+              <TabsTrigger value="technical">Técnico</TabsTrigger>
+              <TabsTrigger value="billing">Facturación</TabsTrigger>
+              <TabsTrigger value="summary">Resumen</TabsTrigger>
             </TabsList>
-            
-            <form 
-              onSubmit={(e) => {
-                e.preventDefault();
-                // Solo procesar si realmente estamos en la última tab
-                if (activeTab === 'summary') {
-                  form.handleSubmit(handleFormSubmit)(e);
-                }
-              }} 
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
-                  e.preventDefault();
-                }
-              }}
-              className="space-y-4"
-            >
-              {/* Personal Tab */}
-              <TabsContent value="personal" className="space-y-4 pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="first_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre *</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="last_name_paterno"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Apellido Paterno *</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 mt-6">
+                {/* PERSONAL TAB */}
+                <TabsContent value="personal" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="first_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Nombre</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Nombre" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="last_name_paterno"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Apellido Paterno</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Apellido paterno" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="last_name_materno"
@@ -673,256 +605,212 @@ export function FinalizeProspectDialog({
                       <FormItem>
                         <FormLabel>Apellido Materno</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input placeholder="Apellido materno (opcional)" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="phone1"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Teléfono 1 *</FormLabel>
-                        <FormControl>
-                          <PhoneInput
-                            value={field.value}
-                            onChange={field.onChange}
-                            country={form.watch('phone1_country') as PhoneCountry}
-                            onCountryChange={(c) => form.setValue('phone1_country', c)}
-                            placeholder="317-131-5782"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone2"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Teléfono 2</FormLabel>
-                        <FormControl>
-                          <PhoneInput
-                            value={field.value || ''}
-                            onChange={field.onChange}
-                            country={form.watch('phone2_country') as PhoneCountry}
-                            onCountryChange={(c) => form.setValue('phone2_country', c)}
-                            placeholder="317-131-5782"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="phone1"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Teléfono 1</FormLabel>
+                          <FormControl>
+                            <PhoneInput 
+                              value={field.value}
+                              onChange={field.onChange}
+                              country={(form.watch('phone1_country') as PhoneCountry) || 'MX'}
+                              onCountryChange={(country) => form.setValue('phone1_country', country)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="phone2"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Teléfono 2 (opcional)</FormLabel>
+                          <FormControl>
+                            <PhoneInput 
+                              value={field.value || ''}
+                              onChange={field.onChange}
+                              country={(form.watch('phone2_country') as PhoneCountry) || 'MX'}
+                              onCountryChange={(country) => form.setValue('phone2_country', country)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="phone3_signer"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Teléfono Firmante</FormLabel>
+                        <FormLabel>Teléfono de quien Firmará (opcional)</FormLabel>
                         <FormControl>
-                          <PhoneInput
+                          <PhoneInput 
                             value={field.value || ''}
                             onChange={field.onChange}
-                            country={form.watch('phone3_country') as PhoneCountry}
-                            onCountryChange={(c) => form.setValue('phone3_country', c)}
-                            placeholder="317-131-5782"
+                            country={(form.watch('phone3_country') as PhoneCountry) || 'MX'}
+                            onCountryChange={(country) => form.setValue('phone3_country', country)}
                           />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
-              </TabsContent>
+                </TabsContent>
 
-              {/* Address Tab */}
-              <TabsContent value="address" className="space-y-4 pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* ADDRESS TAB */}
+                <TabsContent value="address" className="space-y-4">
                   <FormField
                     control={form.control}
                     name="street"
                     render={({ field }) => (
                       <FormItem className="md:col-span-2">
-                        <FormLabel>Calle *</FormLabel>
+                        <FormLabel>Calle</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input placeholder="Nombre de la calle" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="exterior_number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>No. Exterior *</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="interior_number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>No. Interior</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="exterior_number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Número Exterior</FormLabel>
+                          <FormControl>
+                            <Input placeholder="No. Exterior" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="interior_number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Número Interior</FormLabel>
+                          <FormControl>
+                            <Input placeholder="No. Interior (opcional)" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="postal_code"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Código Postal</FormLabel>
+                          <FormControl>
+                            <Input placeholder="C.P. (opcional)" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="neighborhood"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Colonia *</FormLabel>
+                        <FormLabel>Colonia</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input placeholder="Colonia o barrio" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
                   <FormField
                     control={form.control}
-                    name="city"
+                    name="city_id"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ciudad *</FormLabel>
+                        <FormLabel>Ciudad</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <SearchableSelect
+                            options={activeCities.map(c => ({ value: c.id, label: c.name }))}
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="Seleccionar ciudad..."
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="postal_code"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Código Postal</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </TabsContent>
+                </TabsContent>
 
-              {/* Technical Tab */}
-              <TabsContent value="technical" className="space-y-4 pt-4">
-                <FormField
-                  control={form.control}
-                  name="installer_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Técnico Instalador</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar técnico" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {technicians.map((t) => (
-                            <SelectItem key={t.user_id} value={t.user_id}>
-                              {t.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* TECHNICAL TAB */}
+                <TabsContent value="technical" className="space-y-4">
                   <FormField
                     control={form.control}
                     name="ssid"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>SSID</FormLabel>
+                        <FormLabel>SSID WiFi (opcional)</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="Skynet_123" />
+                          <Input placeholder="Nombre de la red WiFi" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
                   <FormField
                     control={form.control}
                     name="antenna_ip"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>IP Antena</FormLabel>
+                        <FormLabel>IP de Antena (opcional)</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="192.168.1.1" />
+                          <Input placeholder="192.168.0.1" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notas</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={3}
-                          placeholder="Observaciones adicionales..."
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </TabsContent>
-
-              {/* Billing Tab */}
-              <TabsContent value="billing" className="space-y-4 pt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="plan_id"
+                    name="installer_id"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Plan de Servicio</FormLabel>
-                        <Select value={field.value} onValueChange={handlePlanChange}>
+                        <FormLabel>Técnico Instalador (opcional)</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar plan" />
+                              <SelectValue placeholder="Selecciona un técnico..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {servicePlans.map((plan) => (
-                              <SelectItem key={plan.id} value={plan.id}>
-                                {plan.name} - {formatCurrency(plan.monthly_fee)}
+                            {technicians.map(tech => (
+                              <SelectItem key={tech.user_id} value={tech.user_id}>
+                                {tech.full_name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -934,406 +822,312 @@ export function FinalizeProspectDialog({
 
                   <FormField
                     control={form.control}
-                    name="monthly_fee"
+                    name="notes"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Mensualidad *</FormLabel>
+                        <FormLabel>Notas Técnicas (opcional)</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={field.value ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              field.onChange(value === '' ? undefined : parseFloat(value));
-                              setTimeout(calculateProrationAmount, 0);
-                            }}
-                          />
+                          <Textarea placeholder="Notas adicionales..." {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
+                </TabsContent>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="installation_date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Fecha de Instalación *</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="date"
-                            {...field}
-                            onChange={(e) => {
-                              field.onChange(e.target.value);
-                              setTimeout(calculateProrationAmount, 0);
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="billing_day"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Día de Corte *</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="28"
-                            {...field}
-                            onChange={(e) => {
-                              field.onChange(parseInt(e.target.value) || 10);
-                              setTimeout(calculateProrationAmount, 0);
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="installation_cost"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Costo de Instalación</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={field.value ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              field.onChange(value === '' ? undefined : parseFloat(value));
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="prorated_amount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-1">
-                          Prorrateo
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={calculateProrationAmount}
-                            title="Calcular prorrateo"
-                          >
-                            <Calculator className="h-3 w-3" />
-                          </Button>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={field.value ?? ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              field.onChange(value === '' ? undefined : parseFloat(value));
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Charge Catalog Selector */}
-                <div className="space-y-3">
-                  <FormLabel>Cargos Adicionales (del catálogo)</FormLabel>
-                  <div className="flex gap-2">
-                    <Select value={selectedChargeId} onValueChange={handleChargeSelect}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Seleccionar cargo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {chargeCatalog.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            {item.name} ({formatCurrency(item.default_amount)})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      className="w-32"
-                      placeholder="Monto"
-                      min="0"
-                      step="0.01"
-                      value={chargeAmount}
-                      onChange={(e) => setChargeAmount(e.target.value)}
+                {/* BILLING TAB */}
+                <TabsContent value="billing" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="plan_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Plan de Servicio</FormLabel>
+                          <Select value={field.value} onValueChange={handlePlanChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecciona un plan..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {servicePlans.map(plan => (
+                                <SelectItem key={plan.id} value={plan.id}>
+                                  {plan.name} - {formatCurrency(plan.monthly_fee)}/mes
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={handleAddCharge}
-                      disabled={!selectedChargeId || !chargeAmount}
-                    >
-                      Agregar
-                    </Button>
+
+                    <FormField
+                      control={form.control}
+                      name="monthly_fee"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Mensualidad</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="0.00" 
+                              {...field}
+                              onChange={(e) => {
+                                field.onChange(parseFloat(e.target.value) || 0);
+                                calculateProrationAmount();
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
-                  
-                  {/* List of added charges */}
-                  {selectedCharges.length > 0 && (
-                    <div className="border rounded-lg p-3 space-y-2">
-                      {selectedCharges.map((charge, index) => (
-                        <div key={index} className="flex justify-between items-center">
-                          <span className="text-sm">{charge.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{formatCurrency(charge.amount)}</span>
-                            <Button 
-                              type="button"
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6"
-                              onClick={() => handleRemoveCharge(index)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      <Separator />
-                      <div className="flex justify-between items-center text-sm font-medium">
-                        <span>Total cargos adicionales:</span>
-                        <span>{formatCurrency(totalAdditionalCharges)}</span>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="installation_date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fecha de Instalación</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="date" 
+                              {...field}
+                              onChange={(e) => {
+                                field.onChange(e.target.value);
+                                calculateProrationAmount();
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="billing_day"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Día de Corte</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number"
+                              min="1"
+                              max="28"
+                              {...field}
+                              onChange={(e) => {
+                                field.onChange(parseInt(e.target.value) || 0);
+                                calculateProrationAmount();
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="installation_cost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Costo de Instalación</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01"
+                              placeholder="0.00" 
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="prorated_amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Prorrateo</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01"
+                              placeholder="0.00"
+                              disabled
+                              {...field}
+                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Additional Charges Section */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Cargos Adicionales</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <Select value={selectedChargeId} onValueChange={handleChargeSelect}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecciona cargo..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {chargeCatalog.map(charge => (
+                              <SelectItem key={charge.id} value={charge.id}>
+                                {charge.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input 
+                          type="number"
+                          step="0.01"
+                          placeholder="Cantidad"
+                          value={chargeAmount}
+                          onChange={(e) => setChargeAmount(e.target.value)}
+                        />
+                        <Button 
+                          type="button"
+                          onClick={handleAddCharge}
+                          disabled={!selectedChargeId || !chargeAmount}
+                        >
+                          Agregar
+                        </Button>
                       </div>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
 
-              {/* Summary Tab */}
-              <TabsContent value="summary" className="space-y-4 pt-4">
-                <div className="space-y-4">
-                  {/* Personal Data */}
-                  <Card>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Datos Personales
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm space-y-1">
-                      <p><strong>Nombre:</strong> {form.watch('first_name')} {form.watch('last_name_paterno')} {form.watch('last_name_materno')}</p>
-                      <p><strong>Teléfono 1:</strong> {formatPhoneDisplay(form.watch('phone1'), form.watch('phone1_country'))}</p>
-                      {form.watch('phone2') && (
-                        <p><strong>Teléfono 2:</strong> {formatPhoneDisplay(form.watch('phone2'), form.watch('phone2_country'))}</p>
-                      )}
-                      {form.watch('phone3_signer') && (
-                        <p><strong>Teléfono Firmante:</strong> {formatPhoneDisplay(form.watch('phone3_signer'), form.watch('phone3_country'))}</p>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Address */}
-                  <Card>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <MapPin className="h-4 w-4" />
-                        Dirección
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm space-y-1">
-                      <p>{form.watch('street')} {form.watch('exterior_number')}{form.watch('interior_number') && ` Int. ${form.watch('interior_number')}`}</p>
-                      <p>{form.watch('neighborhood')}, {form.watch('city')}</p>
-                      {form.watch('postal_code') && <p>C.P. {form.watch('postal_code')}</p>}
-                    </CardContent>
-                  </Card>
-
-                  {/* Technical */}
-                  <Card>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Wifi className="h-4 w-4" />
-                        Datos Técnicos
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm space-y-1">
-                      {technicians.find(t => t.user_id === form.watch('installer_id'))?.full_name && (
-                        <p><strong>Instalador:</strong> {technicians.find(t => t.user_id === form.watch('installer_id'))?.full_name}</p>
-                      )}
-                      {form.watch('ssid') && <p><strong>SSID:</strong> {form.watch('ssid')}</p>}
-                      {form.watch('antenna_ip') && <p><strong>IP Antena:</strong> {form.watch('antenna_ip')}</p>}
-                    </CardContent>
-                  </Card>
-
-                  {/* Billing Summary */}
-                  <Card className="border-primary">
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <DollarSign className="h-4 w-4" />
-                        Resumen de Facturación
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Plan:</span>
-                          <span className="font-medium">{selectedPlanName}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Mensualidad:</span>
-                          <span className="font-medium">{formatCurrency(form.watch('monthly_fee'))}</span>
-                        </div>
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>Fecha de Instalación:</span>
-                          <span>{formatDateMX(form.watch('installation_date'))}</span>
-                        </div>
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>Día de Corte:</span>
-                          <span>{form.watch('billing_day')}</span>
-                        </div>
-                        <Separator className="my-2" />
-                        <div className="flex justify-between items-center">
-                          <span>Costo de Instalación:</span>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.watch('installation_cost') ?? ''}
-                            onChange={(e) => form.setValue('installation_cost', parseFloat(e.target.value) || 0)}
-                            className="w-28 h-7 text-sm text-right"
-                          />
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span>Prorrateo:</span>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.watch('prorated_amount') ?? ''}
-                            onChange={(e) => form.setValue('prorated_amount', parseFloat(e.target.value) || 0)}
-                            className="w-28 h-7 text-sm text-right"
-                          />
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Primera Mensualidad:</span>
-                          <span className="font-medium">{formatCurrency(form.watch('monthly_fee') || 0)}</span>
-                        </div>
-                        {selectedCharges.map((charge, i) => (
-                          <div key={i} className="flex justify-between items-center">
-                            <span>{charge.name}:</span>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={charge.amount}
-                                onChange={(e) => {
-                                  const newCharges = [...selectedCharges];
-                                  newCharges[i] = { ...charge, amount: parseFloat(e.target.value) || 0 };
-                                  setSelectedCharges(newCharges);
-                                }}
-                                className="w-24 h-7 text-sm text-right"
-                              />
-                              <Button
+                      {selectedCharges.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="font-semibold text-sm">Cargos agregados:</div>
+                          {selectedCharges.map((charge, i) => (
+                            <div key={i} className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                              <span className="text-sm">{charge.name} - {formatCurrency(charge.amount)}</span>
+                              <button
                                 type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
                                 onClick={() => handleRemoveCharge(i)}
+                                className="text-destructive hover:text-destructive/80"
                               >
-                                <X className="h-3 w-3" />
-                              </Button>
+                                <X className="w-4 h-4" />
+                              </button>
                             </div>
-                          </div>
-                        ))}
-                        <Separator className="my-2" />
-                        <div className="flex justify-between text-base font-bold text-primary">
-                          <span>Total Saldo Inicial:</span>
-                          <span>{formatCurrency(totalInitialBalance)}</span>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* SUMMARY TAB */}
+                <TabsContent value="summary" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Resumen del Cliente</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="font-semibold">Información Personal</div>
+                          <p>{form.watch('first_name')} {form.watch('last_name_paterno')} {form.watch('last_name_materno')}</p>
+                          <p className="text-xs text-muted-foreground">{form.watch('phone1')}</p>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Dirección</div>
+                          <p>{form.watch('street')} {form.watch('exterior_number')}{form.watch('interior_number') && ` Int. ${form.watch('interior_number')}`}</p>
+                          <p className="text-xs text-muted-foreground">{form.watch('neighborhood')}, {activeCities.find(c => c.id === form.watch('city_id'))?.name}</p>
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      <div>
+                        <div className="font-semibold mb-2">Información de Facturación</div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>Plan: {selectedPlanName}</div>
+                          <div>Mensualidad: {formatCurrency(monthlyFee)}</div>
+                          <div>Día de Corte: {form.watch('billing_day')}</div>
+                          <div>Costo Instalación: {formatCurrency(form.watch('installation_cost') || 0)}</div>
+                          <div>Prorrateo: {formatCurrency(form.watch('prorated_amount') || 0)}</div>
+                          <div>Cargos Adicionales: {formatCurrency(totalAdditionalCharges)}</div>
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      <div className="bg-primary/5 p-3 rounded">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold">Saldo Inicial Total:</span>
+                          <span className="text-lg font-bold">{formatCurrency(totalInitialBalance)}</span>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
-                </div>
-              </TabsContent>
+                </TabsContent>
 
-              <DialogFooter className="pt-4 flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isLoading}
-              >
-                Cancelar
-              </Button>
-              
-              {!isFirstTab && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handlePrevious}
-                  disabled={isLoading}
-                >
-                  Anterior
-                </Button>
-              )}
-              
-              {isLastTab ? (
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="bg-primary hover:bg-primary/90"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Finalizando...
-                    </>
+                {/* Navigation buttons */}
+                <div className="flex justify-between mt-6">
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    onClick={handlePrevious}
+                    disabled={activeTab === 'personal'}
+                  >
+                    Anterior
+                  </Button>
+
+                  {activeTab !== 'summary' ? (
+                    <Button 
+                      type="button"
+                      onClick={handleNext}
+                    >
+                      Siguiente
+                    </Button>
                   ) : (
-                    'Finalizar y Crear Cliente'
+                    <Button 
+                      type="submit"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Finalizando...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                          Finalizar y Crear Cliente
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
-              ) : (
-                <Button type="button" onClick={(e) => handleNext(e)}>
-                  Siguiente
-                </Button>
-              )}
-            </DialogFooter>
-            </form>
+                </div>
+              </form>
+            </Form>
           </Tabs>
-        </Form>
-      </DialogContent>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmFinalizeDialog
         open={showConfirmDialog}
-        onOpenChange={(open) => {
-          setShowConfirmDialog(open);
-          if (!open) {
-            pendingDataRef.current = null;
-          }
-        }}
+        onOpenChange={setShowConfirmDialog}
+        isLoading={isLoading}
         onConfirm={handleConfirmedFinalize}
         totalAmount={totalInitialBalance}
-        isLoading={isLoading}
       />
-    </Dialog>
+    </>
   );
 }
