@@ -74,6 +74,8 @@ import { PaymentReceiptDocument } from '@/components/documents/PaymentReceiptDoc
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
+import { ComboboxWithCreate } from '@/components/shared/ComboboxWithCreate';
+import { useCities } from '@/hooks/useCities';
 import type { Client, ClientBilling, Equipment, Payment } from '@/types/database';
 
 type ClientWithDetails = Client & {
@@ -172,6 +174,7 @@ export default function ClientDetail() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
+  const { activeCities, getCityName, invalidateCities } = useCities();
   
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -449,6 +452,7 @@ export default function ClientDetail() {
         interior_number: c.interior_number || '',
         neighborhood: c.neighborhood,
         city: c.city,
+        city_id: c.city_id || '',
         postal_code: c.postal_code || '',
       });
       
@@ -927,6 +931,7 @@ export default function ClientDetail() {
         interior_number: c.interior_number || '',
         neighborhood: c.neighborhood,
         city: c.city,
+        city_id: c.city_id || '',
         postal_code: c.postal_code || '',
       });
       
@@ -1081,7 +1086,8 @@ export default function ClientDetail() {
           exterior_number: editedClient.exterior_number,
           interior_number: editedClient.interior_number || null,
           neighborhood: editedClient.neighborhood,
-          city: editedClient.city,
+          city: getCityName(editedClient.city_id) || editedClient.city,
+          city_id: editedClient.city_id || null,
           postal_code: editedClient.postal_code || null,
         })
         .eq('id', clientId);
@@ -1362,9 +1368,15 @@ export default function ClientDetail() {
                       </div>
                       <div className="space-y-1">
                         <Label>Ciudad</Label>
-                        <Input
-                          value={editedClient.city || ''}
-                          onChange={(e) => setEditedClient({ ...editedClient, city: e.target.value })}
+                        <ComboboxWithCreate
+                          value={editedClient.city_id || ''}
+                          onChange={(value) => setEditedClient({ ...editedClient, city_id: value })}
+                          items={activeCities}
+                          placeholder="Seleccionar ciudad"
+                          searchPlaceholder="Buscar o crear ciudad..."
+                          emptyMessage="No se encontraron ciudades"
+                          tableName="cities"
+                          onItemCreated={() => invalidateCities()}
                         />
                       </div>
                     </div>
