@@ -42,7 +42,7 @@ import { isMacAddressComplete, isValidIPAddress } from '@/lib/formatUtils';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { useCities } from '@/hooks/useCities';
-import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { ComboboxWithCreate } from '@/components/shared/ComboboxWithCreate';
 
 type ClientWithDetails = Client & {
   client_billing: ClientBilling | null;
@@ -112,7 +112,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
     firstBillingDate: Date;
     totalInitial: number;
   } | null>(null);
-  const { cityOptions, getCityName } = useCities();
+  const { activeCities, getCityName, invalidateCities } = useCities();
 
   // Fetch employees for installer selector
   const { data: employees = [] } = useQuery({
@@ -768,12 +768,21 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
                   />
                   <FormField
                     control={form.control}
-                    name="city"
+                    name="city_id"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Ciudad *</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <ComboboxWithCreate
+                            value={field.value || ''}
+                            onChange={(value) => field.onChange(value)}
+                            items={activeCities}
+                            placeholder="Seleccionar ciudad"
+                            searchPlaceholder="Buscar o crear ciudad..."
+                            emptyMessage="No se encontraron ciudades"
+                            tableName="cities"
+                            onItemCreated={() => invalidateCities()}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

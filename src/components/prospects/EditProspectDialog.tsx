@@ -38,7 +38,7 @@ import { PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
 import { isValidIPAddress } from '@/lib/formatUtils';
 import type { Prospect } from '@/types/database';
 import { useCities } from '@/hooks/useCities';
-import { SearchableSelect } from '@/components/shared/SearchableSelect';
+import { ComboboxWithCreate } from '@/components/shared/ComboboxWithCreate';
 
 const prospectSchema = z.object({
   first_name: z.string().min(1, 'El nombre es requerido').max(100),
@@ -83,7 +83,7 @@ export function EditProspectDialog({
   onSuccess,
 }: EditProspectDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { activeCities, cityOptions, getCityName } = useCities();
+  const { activeCities, getCityName, invalidateCities } = useCities();
 
   // Fetch employees for technician selector
   const { data: employees = [] } = useQuery({
@@ -489,13 +489,15 @@ export function EditProspectDialog({
                     <FormItem>
                       <FormLabel>Ciudad *</FormLabel>
                       <FormControl>
-                        <SearchableSelect
+                        <ComboboxWithCreate
                           value={field.value || ''}
-                          onChange={field.onChange}
-                          options={cityOptions}
+                          onChange={(value) => field.onChange(value)}
+                          items={activeCities}
                           placeholder="Seleccionar ciudad"
-                          searchPlaceholder="Buscar ciudad..."
+                          searchPlaceholder="Buscar o crear ciudad..."
                           emptyMessage="No se encontraron ciudades"
+                          tableName="cities"
+                          onItemCreated={() => invalidateCities()}
                         />
                       </FormControl>
                       <FormMessage />
