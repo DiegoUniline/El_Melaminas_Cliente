@@ -35,6 +35,8 @@ import { PhoneInput } from '@/components/shared/PhoneInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
 import { PhoneCountry, formatPhoneNumber, isPhoneComplete } from '@/lib/phoneUtils';
 import { isValidIPAddress } from '@/lib/formatUtils';
+import { useCities } from '@/hooks/useCities';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const prospectSchema = z.object({
   first_name: z.string().min(1, 'El nombre es requerido').max(100),
@@ -50,7 +52,8 @@ const prospectSchema = z.object({
   exterior_number: z.string().min(1, 'El número exterior es requerido').max(20),
   interior_number: z.string().max(20).optional(),
   neighborhood: z.string().min(1, 'La colonia es requerida').max(100),
-  city: z.string().min(1, 'La ciudad es requerida').max(100),
+  city: z.string().max(100).optional(), // Keep for backward compatibility
+  city_id: z.string().min(1, 'La ciudad es requerida'),
   postal_code: z.string().max(10).optional(),
   work_type: z.string().max(100).optional(),
   request_date: z.string().min(1, 'La fecha de solicitud es requerida'),
@@ -101,6 +104,7 @@ export function ProspectFormDialog({
 }: ProspectFormDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const { activeCities, cityOptions, getCityName } = useCities();
 
   // Fetch employees for technician selector
   const { data: employees = [] } = useQuery({
@@ -132,6 +136,7 @@ export function ProspectFormDialog({
       interior_number: '',
       neighborhood: '',
       city: '',
+      city_id: '',
       postal_code: '',
       work_type: '',
       request_date: new Date().toISOString().split('T')[0],
@@ -146,6 +151,9 @@ export function ProspectFormDialog({
   const onSubmit = async (values: ProspectFormValues) => {
     setIsLoading(true);
     try {
+      // Get city name from city_id
+      const cityName = getCityName(values.city_id);
+      
       const { error } = await supabase.from('prospects').insert({
         first_name: values.first_name,
         last_name_paterno: values.last_name_paterno,
@@ -160,7 +168,8 @@ export function ProspectFormDialog({
         exterior_number: values.exterior_number,
         interior_number: values.interior_number || null,
         neighborhood: values.neighborhood,
-        city: values.city,
+        city: cityName, // Keep text for backward compatibility
+        city_id: values.city_id,
         postal_code: values.postal_code || null,
         work_type: values.work_type || null,
         request_date: values.request_date,
@@ -374,12 +383,19 @@ export function ProspectFormDialog({
                 />
                 <FormField
                   control={form.control}
-                  name="city"
+                  name="city_id"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Ciudad *</FormLabel>
                       <FormControl>
-                        <Input placeholder="Ciudad de México" {...field} />
+                        <SearchableSelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={cityOptions}
+                          placeholder="Seleccionar ciudad"
+                          searchPlaceholder="Buscar ciudad..."
+                          emptyMessage="No se encontraron ciudades"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

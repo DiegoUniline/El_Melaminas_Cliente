@@ -37,6 +37,8 @@ import { Separator } from '@/components/ui/separator';
 import { PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
 import { isValidIPAddress } from '@/lib/formatUtils';
 import type { Prospect } from '@/types/database';
+import { useCities } from '@/hooks/useCities';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 const prospectSchema = z.object({
   first_name: z.string().min(1, 'El nombre es requerido').max(100),
@@ -52,7 +54,8 @@ const prospectSchema = z.object({
   exterior_number: z.string().min(1, 'El número exterior es requerido').max(20),
   interior_number: z.string().max(20).optional(),
   neighborhood: z.string().min(1, 'La colonia es requerida').max(100),
-  city: z.string().min(1, 'La ciudad es requerida').max(100),
+  city: z.string().max(100).optional(), // Keep for backward compatibility
+  city_id: z.string().optional(),
   postal_code: z.string().max(10).optional(),
   work_type: z.string().max(100).optional(),
   request_date: z.string().min(1, 'La fecha de solicitud es requerida'),
@@ -80,6 +83,7 @@ export function EditProspectDialog({
   onSuccess,
 }: EditProspectDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const { activeCities, cityOptions, getCityName } = useCities();
 
   // Fetch employees for technician selector
   const { data: employees = [] } = useQuery({
@@ -110,6 +114,7 @@ export function EditProspectDialog({
       interior_number: '',
       neighborhood: '',
       city: '',
+      city_id: '',
       postal_code: '',
       work_type: '',
       request_date: '',
@@ -139,6 +144,7 @@ export function EditProspectDialog({
         interior_number: prospect.interior_number || '',
         neighborhood: prospect.neighborhood || '',
         city: prospect.city || '',
+        city_id: (prospect as any).city_id || '',
         postal_code: prospect.postal_code || '',
         work_type: prospect.work_type || '',
         request_date: prospect.request_date || '',
@@ -194,6 +200,7 @@ export function EditProspectDialog({
         { key: 'interior_number', label: 'No. Interior' },
         { key: 'neighborhood', label: 'Colonia' },
         { key: 'city', label: 'Ciudad' },
+        { key: 'city_id', label: 'ID Ciudad' },
         { key: 'postal_code', label: 'Código Postal' },
         { key: 'work_type', label: 'Tipo de Trabajo' },
         { key: 'request_date', label: 'Fecha de Solicitud' },
@@ -222,6 +229,9 @@ export function EditProspectDialog({
         }
       });
 
+      // Get city name from city_id if changed
+      const cityName = values.city_id ? getCityName(values.city_id) : values.city;
+      
       // Update the prospect
       const { error } = await supabase
         .from('prospects')
@@ -239,7 +249,8 @@ export function EditProspectDialog({
           exterior_number: values.exterior_number,
           interior_number: values.interior_number || null,
           neighborhood: values.neighborhood,
-          city: values.city,
+          city: cityName,
+          city_id: values.city_id || null,
           postal_code: values.postal_code || null,
           work_type: values.work_type || null,
           request_date: values.request_date,
@@ -473,12 +484,19 @@ export function EditProspectDialog({
                 />
                 <FormField
                   control={form.control}
-                  name="city"
+                  name="city_id"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Ciudad *</FormLabel>
                       <FormControl>
-                        <Input placeholder="Ciudad de México" {...field} />
+                        <SearchableSelect
+                          value={field.value || ''}
+                          onChange={field.onChange}
+                          options={cityOptions}
+                          placeholder="Seleccionar ciudad"
+                          searchPlaceholder="Buscar ciudad..."
+                          emptyMessage="No se encontraron ciudades"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

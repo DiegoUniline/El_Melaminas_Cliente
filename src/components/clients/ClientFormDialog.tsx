@@ -41,6 +41,8 @@ import { PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
 import { isMacAddressComplete, isValidIPAddress } from '@/lib/formatUtils';
 import { MacAddressInput } from '@/components/shared/MacAddressInput';
 import { IpAddressInput } from '@/components/shared/IpAddressInput';
+import { useCities } from '@/hooks/useCities';
+import { SearchableSelect } from '@/components/shared/SearchableSelect';
 
 type ClientWithDetails = Client & {
   client_billing: ClientBilling | null;
@@ -63,7 +65,8 @@ const clientSchema = z.object({
   exterior_number: z.string().min(1, 'El número exterior es requerido'),
   interior_number: z.string().optional(),
   neighborhood: z.string().min(2, 'La colonia es requerida'),
-  city: z.string().min(2, 'La ciudad es requerida'),
+  city: z.string().optional(), // Keep for backward compatibility
+  city_id: z.string().optional(),
   postal_code: z.string().optional(),
   // Billing
   monthly_fee: z.number().min(0, 'La mensualidad debe ser mayor a 0'),
@@ -109,6 +112,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
     firstBillingDate: Date;
     totalInitial: number;
   } | null>(null);
+  const { cityOptions, getCityName } = useCities();
 
   // Fetch employees for installer selector
   const { data: employees = [] } = useQuery({
@@ -156,6 +160,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
       interior_number: '',
       neighborhood: '',
       city: '',
+      city_id: '',
       postal_code: '',
       monthly_fee: undefined,
       installation_cost: undefined,
@@ -228,6 +233,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
         interior_number: client.interior_number || '',
         neighborhood: client.neighborhood,
         city: client.city,
+        city_id: (client as any).city_id || '',
         postal_code: client.postal_code || '',
         monthly_fee: billing?.monthly_fee || 0,
         installation_cost: billing?.installation_cost || 0,
@@ -266,6 +272,7 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
         interior_number: '',
         neighborhood: '',
         city: '',
+        city_id: '',
         postal_code: '',
       monthly_fee: undefined,
       installation_cost: undefined,
@@ -364,6 +371,9 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
       );
 
       if (client) {
+        // Get city name from city_id
+        const cityName = data.city_id ? getCityName(data.city_id) : data.city;
+        
         // Update existing client
         const { error: clientError } = await supabase
           .from('clients')
@@ -378,7 +388,8 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
             exterior_number: data.exterior_number,
             interior_number: data.interior_number || null,
             neighborhood: data.neighborhood,
-            city: data.city,
+            city: cityName,
+            city_id: data.city_id || null,
             postal_code: data.postal_code || null,
           })
           .eq('id', client.id);
@@ -431,6 +442,9 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
           if (equipmentError) throw equipmentError;
         }
       } else {
+        // Get city name from city_id
+        const cityName = data.city_id ? getCityName(data.city_id) : data.city;
+        
         // Create new client
         const { data: newClient, error: clientError } = await supabase
           .from('clients')
@@ -445,7 +459,8 @@ export function ClientFormDialog({ client, open, onOpenChange, onSuccess }: Clie
             exterior_number: data.exterior_number,
             interior_number: data.interior_number || null,
             neighborhood: data.neighborhood,
-            city: data.city,
+            city: cityName,
+            city_id: data.city_id || null,
             postal_code: data.postal_code || null,
             created_by: user?.id,
             status: 'active',

@@ -35,9 +35,10 @@ import {
 } from '@/components/ui/select';
 import { 
   Plus, Edit, Power, PowerOff, DollarSign, Wifi, 
-  Loader2, Tag, Settings, CreditCard, Building, Users, KeyRound
+  Loader2, Tag, Settings, CreditCard, Building, Users, KeyRound, MapPin
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
+import { useCities, type City } from '@/hooks/useCities';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 
 // ========== TYPES ==========
@@ -118,6 +119,13 @@ export default function Catalogs() {
   const [isSubmittingBank, setIsSubmittingBank] = useState(false);
   const [toggleBankDialog, setToggleBankDialog] = useState<Bank | null>(null);
 
+  // ========== CITY STATE ==========
+  const [cityDialogOpen, setCityDialogOpen] = useState(false);
+  const [editingCity, setEditingCity] = useState<City | null>(null);
+  const [cityForm, setCityForm] = useState({ name: '' });
+  const [isSubmittingCity, setIsSubmittingCity] = useState(false);
+  const [toggleCityDialog, setToggleCityDialog] = useState<City | null>(null);
+
   // ========== USER STATE ==========
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [userForm, setUserForm] = useState({ full_name: '', email: '', password: '', role: 'employee' });
@@ -165,6 +173,9 @@ export default function Catalogs() {
       return data as Bank[];
     },
   });
+
+  // Cities hook
+  const { allCities: cities, isLoadingAll: loadingCities, invalidateCities } = useCities();
 
   const { data: users = [], isLoading: loadingUsers } = useQuery({
     queryKey: ['users_with_roles'],
@@ -405,6 +416,58 @@ export default function Catalogs() {
     }
   };
 
+  // ========== CITY HANDLERS ==========
+  const handleNewCity = () => {
+    setEditingCity(null);
+    setCityForm({ name: '' });
+    setCityDialogOpen(true);
+  };
+
+  const handleEditCity = (city: City) => {
+    setEditingCity(city);
+    setCityForm({ name: city.name });
+    setCityDialogOpen(true);
+  };
+
+  const handleSaveCity = async () => {
+    if (!cityForm.name) {
+      toast.error('El nombre es requerido');
+      return;
+    }
+    setIsSubmittingCity(true);
+    try {
+      const data = { name: cityForm.name };
+      if (editingCity) {
+        const { error } = await supabase.from('cities').update(data).eq('id', editingCity.id);
+        if (error) throw error;
+        toast.success('Ciudad actualizada');
+      } else {
+        const { error } = await supabase.from('cities').insert(data);
+        if (error) throw error;
+        toast.success('Ciudad creada');
+      }
+      invalidateCities();
+      setCityDialogOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Error al guardar');
+    } finally {
+      setIsSubmittingCity(false);
+    }
+  };
+
+  const handleToggleCity = async () => {
+    if (!toggleCityDialog) return;
+    try {
+      const { error } = await supabase.from('cities').update({ is_active: !toggleCityDialog.is_active }).eq('id', toggleCityDialog.id);
+      if (error) throw error;
+      toast.success(toggleCityDialog.is_active ? 'Ciudad desactivada' : 'Ciudad activada');
+      invalidateCities();
+      setToggleCityDialog(null);
+    } catch (error: any) {
+      toast.error(error.message || 'Error');
+    }
+  };
+
   // ========== USER ROLE HANDLER ==========
   const handleChangeUserRole = async (userId: string, currentRole: string) => {
     const newRole = currentRole === 'admin' ? 'employee' : 'admin';
@@ -535,6 +598,7 @@ export default function Catalogs() {
   const activePlans = plans.filter(p => p.is_active).length;
   const activePaymentMethods = paymentMethods.filter(pm => pm.is_active).length;
   const activeBanks = banks.filter(b => b.is_active).length;
+  const activeCitiesCount = cities.filter(c => c.is_active).length;
 
   return (
     <AppLayout>
@@ -551,7 +615,7 @@ export default function Catalogs() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
@@ -607,15 +671,27 @@ export default function Catalogs() {
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-teal-100"><MapPin className="h-5 w-5 text-teal-600" /></div>
+                <div>
+                  <p className="text-2xl font-bold">{activeCitiesCount}/{cities.length}</p>
+                  <p className="text-xs text-muted-foreground">Ciudades</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-2xl grid-cols-5">
+          <TabsList className="grid w-full max-w-3xl grid-cols-6">
             <TabsTrigger value="charges"><Tag className="h-4 w-4 mr-1 hidden sm:inline" />Cargos</TabsTrigger>
             <TabsTrigger value="plans"><Wifi className="h-4 w-4 mr-1 hidden sm:inline" />Planes</TabsTrigger>
             <TabsTrigger value="payment-methods"><CreditCard className="h-4 w-4 mr-1 hidden sm:inline" />M. Pago</TabsTrigger>
             <TabsTrigger value="banks"><Building className="h-4 w-4 mr-1 hidden sm:inline" />Bancos</TabsTrigger>
+            <TabsTrigger value="cities"><MapPin className="h-4 w-4 mr-1 hidden sm:inline" />Ciudades</TabsTrigger>
             <TabsTrigger value="users"><Users className="h-4 w-4 mr-1 hidden sm:inline" />Usuarios</TabsTrigger>
           </TabsList>
 
@@ -799,6 +875,48 @@ export default function Catalogs() {
             </Card>
           </TabsContent>
 
+          {/* ========== CITIES TAB ========== */}
+          <TabsContent value="cities" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><MapPin className="h-5 w-5" />Ciudades</CardTitle>
+                {isAdmin && <Button onClick={handleNewCity}><Plus className="h-4 w-4 mr-2" />Nueva</Button>}
+              </CardHeader>
+              <CardContent>
+                {loadingCities ? <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>NOMBRE</TableHead>
+                        <TableHead>ESTADO</TableHead>
+                        {isAdmin && <TableHead className="text-right">ACCIONES</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cities.map((city) => (
+                        <TableRow key={city.id} className={!city.is_active ? 'opacity-50' : ''}>
+                          <TableCell className="font-medium">{city.name}</TableCell>
+                          <TableCell><Badge variant={city.is_active ? 'default' : 'secondary'}>{city.is_active ? 'Activa' : 'Inactiva'}</Badge></TableCell>
+                          {isAdmin && (
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => handleEditCity(city)}><Edit className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="sm" onClick={() => setToggleCityDialog(city)}>
+                                  {city.is_active ? <PowerOff className="h-4 w-4 text-destructive" /> : <Power className="h-4 w-4 text-emerald-600" />}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
+                      {cities.length === 0 && <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No hay ciudades registradas</TableCell></TableRow>}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* ========== USERS TAB ========== */}
           <TabsContent value="users" className="mt-6">
             <Card>
@@ -918,6 +1036,20 @@ export default function Catalogs() {
         </DialogContent>
       </Dialog>
 
+      {/* City Dialog */}
+      <Dialog open={cityDialogOpen} onOpenChange={setCityDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{editingCity ? 'Editar Ciudad' : 'Nueva Ciudad'}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2"><Label>Nombre *</Label><Input value={cityForm.name} onChange={(e) => setCityForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Ej: Ciudad de México" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCityDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveCity} disabled={isSubmittingCity}>{isSubmittingCity && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{editingCity ? 'Guardar' : 'Crear'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* User Dialog */}
       <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
         <DialogContent>
@@ -981,6 +1113,7 @@ export default function Catalogs() {
       <ConfirmDialog open={!!togglePlanDialog} onOpenChange={() => setTogglePlanDialog(null)} title={togglePlanDialog?.is_active ? 'Desactivar Plan' : 'Activar Plan'} description={togglePlanDialog?.is_active ? `¿Desactivar "${togglePlanDialog?.name}"?` : `¿Activar "${togglePlanDialog?.name}"?`} confirmText={togglePlanDialog?.is_active ? 'Desactivar' : 'Activar'} variant={togglePlanDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleTogglePlan} />
       <ConfirmDialog open={!!togglePaymentMethodDialog} onOpenChange={() => setTogglePaymentMethodDialog(null)} title={togglePaymentMethodDialog?.is_active ? 'Desactivar Método' : 'Activar Método'} description={togglePaymentMethodDialog?.is_active ? `¿Desactivar "${togglePaymentMethodDialog?.name}"?` : `¿Activar "${togglePaymentMethodDialog?.name}"?`} confirmText={togglePaymentMethodDialog?.is_active ? 'Desactivar' : 'Activar'} variant={togglePaymentMethodDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleTogglePaymentMethod} />
       <ConfirmDialog open={!!toggleBankDialog} onOpenChange={() => setToggleBankDialog(null)} title={toggleBankDialog?.is_active ? 'Desactivar Banco' : 'Activar Banco'} description={toggleBankDialog?.is_active ? `¿Desactivar "${toggleBankDialog?.name}"?` : `¿Activar "${toggleBankDialog?.name}"?`} confirmText={toggleBankDialog?.is_active ? 'Desactivar' : 'Activar'} variant={toggleBankDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleToggleBank} />
+      <ConfirmDialog open={!!toggleCityDialog} onOpenChange={() => setToggleCityDialog(null)} title={toggleCityDialog?.is_active ? 'Desactivar Ciudad' : 'Activar Ciudad'} description={toggleCityDialog?.is_active ? `¿Desactivar "${toggleCityDialog?.name}"?` : `¿Activar "${toggleCityDialog?.name}"?`} confirmText={toggleCityDialog?.is_active ? 'Desactivar' : 'Activar'} variant={toggleCityDialog?.is_active ? 'destructive' : 'default'} onConfirm={handleToggleCity} />
     </AppLayout>
   );
 }

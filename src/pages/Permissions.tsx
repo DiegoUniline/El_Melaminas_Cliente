@@ -20,7 +20,8 @@ import {
   Pencil,
   Trash2,
   CheckCircle2,
-  XCircle
+  XCircle,
+  MapPin
 } from 'lucide-react';
 import { 
   ALL_MODULES, 
@@ -43,6 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useCities, useUserCityAssignments } from '@/hooks/useCities';
 
 interface UserProfile {
   user_id: string;
@@ -95,6 +97,10 @@ export default function Permissions() {
     },
     enabled: isAdmin,
   });
+
+  // Cities data
+  const { activeCities, isLoadingActive: isLoadingCities } = useCities();
+  const { assignedCities, isLoading: isLoadingCityAssignments, toggleCity } = useUserCityAssignments(selectedUserId);
 
   // Fetch permissions for selected user
   const { data: userPermissions = [], isLoading: isLoadingPermissions } = useQuery({
@@ -552,6 +558,53 @@ export default function Permissions() {
                       })}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+
+              {/* City Assignments Section */}
+              {selectedUser && !isLoadingPermissions && (
+                <div className="mt-6">
+                  <Separator className="mb-4" />
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5" />
+                      <h3 className="font-semibold">Ciudades Asignadas</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Selecciona las ciudades que este usuario puede ver. Solo verá clientes y prospectos de estas ciudades.
+                    </p>
+                    
+                    {isLoadingCities || isLoadingCityAssignments ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : activeCities.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-4">
+                        No hay ciudades configuradas. Ve a Catálogos para agregar ciudades.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {activeCities.map((city) => (
+                          <div
+                            key={city.id}
+                            className={cn(
+                              "flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors",
+                              assignedCities.includes(city.id) 
+                                ? "bg-primary/10 border-primary" 
+                                : "hover:bg-muted/50"
+                            )}
+                            onClick={() => toggleCity(city.id)}
+                          >
+                            <Checkbox
+                              checked={assignedCities.includes(city.id)}
+                              onCheckedChange={() => toggleCity(city.id)}
+                            />
+                            <span className="text-sm font-medium">{city.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
