@@ -185,7 +185,10 @@ export default function Payments() {
       header: 'Cliente',
       render: (payment: PaymentWithClient) => (
         <p className="font-medium">
-          {payment.clients?.first_name} {payment.clients?.last_name_paterno}
+          {payment.clients 
+            ? `${payment.clients.first_name} ${payment.clients.last_name_paterno}`
+            : <span className="text-muted-foreground italic">Sin acceso (restricción de ciudad)</span>
+          }
         </p>
       ),
     },
