@@ -52,7 +52,7 @@ import {
   Receipt, CheckCircle2, Clock, AlertCircle, Edit, Loader2,
   History, ChevronDown, Settings, Router, CalendarClock, Trash2, 
   MoreHorizontal, RefreshCw, Filter, ArrowLeft, Save, X, Upload, Eye,
-  FileDown, Printer, Download
+  FileDown, Printer, Download, MessageSquare
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
 import { formatPhoneNumber, formatPhoneDisplay, PhoneCountry, isPhoneComplete } from '@/lib/phoneUtils';
@@ -76,6 +76,7 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { ChangeHistoryPanel } from '@/components/shared/ChangeHistoryPanel';
 import { ComboboxWithCreate } from '@/components/shared/ComboboxWithCreate';
 import { useCities } from '@/hooks/useCities';
+import { SendWhatsAppDialog } from '@/components/whatsapp/SendWhatsAppDialog';
 import type { Client, ClientBilling, Equipment, Payment } from '@/types/database';
 
 type ClientWithDetails = Client & {
@@ -194,6 +195,7 @@ export default function ClientDetail() {
   const [relocationOpen, setRelocationOpen] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showInitialBillingDialog, setShowInitialBillingDialog] = useState(false);
+  const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false);
   
   // Note states
   const [newNote, setNewNote] = useState('');
@@ -1427,6 +1429,17 @@ export default function ClientDetail() {
                     <Button onClick={() => setShowPaymentDialog(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700">
                       <DollarSign className="h-4 w-4 mr-1" />
                       Registrar Pago
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowWhatsAppDialog(true);
+                      }}
+                      className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-1" />
+                      WhatsApp
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -2897,6 +2910,23 @@ export default function ClientDetail() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {client && (
+        <SendWhatsAppDialog
+          open={showWhatsAppDialog}
+          onOpenChange={setShowWhatsAppDialog}
+          module="clients"
+          phone={client.phone1 || ''}
+          clientName={`${client.first_name} ${client.last_name_paterno}`}
+          variables={{
+            nombre_cliente: `${client.first_name} ${client.last_name_paterno}`,
+            telefono: client.phone1 || '',
+            direccion: `${client.street} ${client.exterior_number}, ${client.neighborhood}, ${client.city}`,
+            plan: billing?.plan_id ? 'Plan actual' : 'Sin plan',
+            dia_corte: String(billing?.billing_day || ''),
+          }}
+        />
+      )}
     </AppLayout>
   );
 }

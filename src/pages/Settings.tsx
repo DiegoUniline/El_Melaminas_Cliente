@@ -12,7 +12,8 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings as SettingsIcon, User, Bell, Shield, Database, Loader2, Check, Save } from 'lucide-react';
+import { Settings as SettingsIcon, User, Bell, Shield, Database, Loader2, Check, Save, MessageSquare } from 'lucide-react';
+import { WhatsAppSettingsPanel } from '@/components/whatsapp/WhatsAppSettings';
 
 export default function Settings() {
   const { user, profile, isAdmin } = useAuth();
@@ -100,6 +101,12 @@ export default function Settings() {
               <Bell className="h-4 w-4" />
               Notificaciones
             </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="whatsapp" className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                WhatsApp
+              </TabsTrigger>
+            )}
             {isAdmin && (
               <TabsTrigger value="system" className="flex items-center gap-2">
                 <Database className="h-4 w-4" />
@@ -258,6 +265,13 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* WhatsApp Tab (Admin only) */}
+          {isAdmin && (
+            <TabsContent value="whatsapp">
+              <WhatsAppSettingsPanel />
+            </TabsContent>
+          )}
 
           {/* System Tab (Admin only) */}
           {isAdmin && (

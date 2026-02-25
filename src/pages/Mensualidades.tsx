@@ -31,9 +31,10 @@ import { toast } from 'sonner';
 import { 
   Calendar, Search, AlertTriangle, CheckCircle2, Clock, 
   DollarSign, Users, Filter, TrendingUp, AlertCircle,
-  Loader2, RefreshCw, FileWarning
+  Loader2, RefreshCw, FileWarning, MessageSquare
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/billing';
+import { SendWhatsAppDialog, WhatsAppVariables } from '@/components/whatsapp/SendWhatsAppDialog';
 
 
 interface ClientMensualidad {
@@ -66,6 +67,8 @@ export default function Mensualidades() {
   const [daysFilter, setDaysFilter] = useState<string>('all');
   const [chargeFilter, setChargeFilter] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false);
+  const [whatsAppMensualidad, setWhatsAppMensualidad] = useState<ClientMensualidad | null>(null);
 
   // Fetch active clients with billing
   const { data: clients = [], isLoading: loadingClients, refetch: refetchClients } = useQuery({
@@ -695,6 +698,7 @@ export default function Mensualidades() {
                     <TableHead className="text-right">PENDIENTE</TableHead>
                     <TableHead>CARGO</TableHead>
                     <TableHead>ESTADO</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -754,11 +758,24 @@ export default function Mensualidades() {
                         <TableCell>
                           {getStatusBadge(m.status, m.daysUntilDue)}
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setWhatsAppMensualidad(m);
+                              setShowWhatsAppDialog(true);
+                            }}
+                            title="Enviar WhatsApp"
+                          >
+                            <MessageSquare className="h-4 w-4 text-emerald-600" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
                         No se encontraron mensualidades con los filtros aplicados
                       </TableCell>
                     </TableRow>
@@ -769,6 +786,24 @@ export default function Mensualidades() {
           </CardContent>
         </Card>
       </div>
+
+      {whatsAppMensualidad && (
+        <SendWhatsAppDialog
+          open={showWhatsAppDialog}
+          onOpenChange={setShowWhatsAppDialog}
+          module="mensualidades"
+          phone={whatsAppMensualidad.phone}
+          clientName={whatsAppMensualidad.clientName}
+          variables={{
+            nombre_cliente: whatsAppMensualidad.clientName,
+            monto_mensualidad: formatCurrency(whatsAppMensualidad.monthlyFee),
+            mes_periodo: whatsAppMensualidad.monthName,
+            dia_corte: String(whatsAppMensualidad.billingDay),
+            saldo_pendiente: formatCurrency(whatsAppMensualidad.balance),
+            dias_vencido: String(Math.abs(whatsAppMensualidad.daysUntilDue)),
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
