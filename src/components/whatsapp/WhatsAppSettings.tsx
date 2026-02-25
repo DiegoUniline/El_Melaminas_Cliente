@@ -251,8 +251,9 @@ export function WhatsAppSettingsPanel() {
             <Label>URL de API</Label>
             <Input
               value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="https://..."
+              readOnly
+              disabled
+              className="bg-muted"
             />
           </div>
           <Button onClick={handleSaveSettings} disabled={isSavingSettings}>
