@@ -1132,6 +1132,110 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_log: {
+        Row: {
+          created_at: string | null
+          id: string
+          message: string
+          module: string
+          phone: string
+          response_data: Json | null
+          sent_by: string | null
+          status: string
+          template_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message: string
+          module: string
+          phone: string
+          response_data?: Json | null
+          sent_by?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message?: string
+          module?: string
+          phone?: string
+          response_data?: Json | null
+          sent_by?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_log_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_settings: {
+        Row: {
+          api_token: string
+          api_url: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          updated_at: string | null
+        }
+        Insert: {
+          api_token?: string
+          api_url?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+        }
+        Update: {
+          api_token?: string
+          api_url?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_templates: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          message_template: string
+          module: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template: string
+          module: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template?: string
+          module?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
