@@ -12,13 +12,14 @@ import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { DataTable } from '@/components/shared/DataTable';
 import { PaymentDetailDialog } from '@/components/payments/PaymentDetailDialog';
 import { exportToExcel } from '@/lib/exportToExcel';
-import { Download, Eye, CreditCard, DollarSign, TrendingUp, Calendar } from 'lucide-react';
+import { Download, Eye, CreditCard, DollarSign, TrendingUp, Calendar, MessageSquare } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/billing';
 import { useCities } from '@/hooks/useCities';
 import { useAuth } from '@/hooks/useAuth';
 import type { Payment, Client } from '@/types/database';
+import { SendWhatsAppDialog, WhatsAppVariables } from '@/components/whatsapp/SendWhatsAppDialog';
 
 type PaymentWithClient = Payment & {
   clients: {
@@ -27,6 +28,7 @@ type PaymentWithClient = Payment & {
     last_name_paterno: string;
     last_name_materno: string | null;
     city_id: string | null;
+    phone1: string;
   } | null;
 };
 
@@ -37,6 +39,8 @@ export default function Payments() {
   const [search, setSearch] = useState('');
   const [selectedPayment, setSelectedPayment] = useState<PaymentWithClient | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false);
+  const [whatsAppPayment, setWhatsAppPayment] = useState<PaymentWithClient | null>(null);
   
   // Filter states
   const [filterDateFrom, setFilterDateFrom] = useState('');
@@ -50,7 +54,7 @@ export default function Payments() {
         .from('payments')
         .select(`
           *,
-          clients (id, first_name, last_name_paterno, last_name_materno, city_id)
+          clients (id, first_name, last_name_paterno, last_name_materno, city_id, phone1)
         `)
         .order('payment_date', { ascending: false })
         .limit(500);
@@ -247,9 +251,24 @@ export default function Payments() {
       key: 'actions',
       header: 'Acciones',
       render: (payment: PaymentWithClient) => (
-        <Button variant="ghost" size="icon" onClick={() => handleView(payment)} title="Ver detalles">
-          <Eye className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" onClick={() => handleView(payment)} title="Ver detalles">
+            <Eye className="h-4 w-4" />
+          </Button>
+          {payment.clients && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setWhatsAppPayment(payment);
+                setShowWhatsAppDialog(true);
+              }}
+              title="Enviar WhatsApp"
+            >
+              <MessageSquare className="h-4 w-4 text-emerald-600" />
+            </Button>
+          )}
+        </div>
       ),
     },
   ];
@@ -398,6 +417,24 @@ export default function Payments() {
         open={showDetailDialog}
         onOpenChange={setShowDetailDialog}
       />
+
+      {whatsAppPayment && whatsAppPayment.clients && (
+        <SendWhatsAppDialog
+          open={showWhatsAppDialog}
+          onOpenChange={setShowWhatsAppDialog}
+          module="payments"
+          phone={whatsAppPayment.clients.phone1 || ''}
+          clientName={`${whatsAppPayment.clients.first_name} ${whatsAppPayment.clients.last_name_paterno}`}
+          variables={{
+            nombre_cliente: `${whatsAppPayment.clients.first_name} ${whatsAppPayment.clients.last_name_paterno}`,
+            monto: formatCurrency(whatsAppPayment.amount),
+            recibo: whatsAppPayment.receipt_number || 'N/A',
+            fecha_pago: format(new Date(whatsAppPayment.payment_date), 'dd/MM/yyyy', { locale: es }),
+            tipo_pago: getPaymentMethodName(whatsAppPayment.payment_type),
+            banco: whatsAppPayment.bank_type ? getBankName(whatsAppPayment.bank_type) : 'N/A',
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
