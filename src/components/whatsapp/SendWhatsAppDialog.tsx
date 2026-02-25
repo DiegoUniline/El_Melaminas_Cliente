@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, MessageSquare, Eye } from 'lucide-react';
+import { Loader2, Send, MessageSquare, Eye, Settings } from 'lucide-react';
 
 export type WhatsAppModule = 'payments' | 'mensualidades' | 'services' | 'clients';
 
@@ -76,6 +77,8 @@ export function SendWhatsAppDialog({
   const [editedPhone, setEditedPhone] = useState(phone);
   const [isSending, setIsSending] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showConfigError, setShowConfigError] = useState(false);
+  const navigate = useNavigate();
 
   const { data: templates = [] } = useQuery({
     queryKey: ['whatsapp_templates', module],
@@ -98,6 +101,7 @@ export function SendWhatsAppDialog({
       setEditedMessage('');
       setEditedPhone(phone);
       setShowPreview(false);
+      setShowConfigError(false);
     }
     onOpenChange(isOpen);
   };
@@ -156,13 +160,23 @@ export function SendWhatsAppDialog({
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Error al enviar mensaje');
+        const errorMsg = result.error || 'Error al enviar mensaje';
+        if (errorMsg.includes('token') || errorMsg.includes('configurado')) {
+          setShowConfigError(true);
+          return;
+        }
+        throw new Error(errorMsg);
       }
 
       toast.success('Mensaje de WhatsApp enviado correctamente');
       onOpenChange(false);
     } catch (error: any) {
-      toast.error(error.message || 'Error al enviar mensaje');
+      const msg = error.message || 'Error al enviar mensaje';
+      if (msg.includes('token') || msg.includes('configurado')) {
+        setShowConfigError(true);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setIsSending(false);
     }
@@ -181,6 +195,32 @@ export function SendWhatsAppDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {showConfigError ? (
+          <div className="flex flex-col items-center gap-4 py-6 text-center">
+            <Settings className="h-12 w-12 text-muted-foreground" />
+            <div>
+              <p className="font-medium text-lg">WhatsApp no configurado</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                El token de WhatsAPI no está configurado. Configúralo en la sección de Ajustes para poder enviar mensajes.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cerrar
+              </Button>
+              <Button
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate('/settings');
+                }}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir a Configuración
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Teléfono</Label>
@@ -284,6 +324,8 @@ export function SendWhatsAppDialog({
             Enviar
           </Button>
         </DialogFooter>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );
